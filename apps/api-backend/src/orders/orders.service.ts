@@ -73,10 +73,32 @@ export class OrdersService {
 
     // Create order with items in transaction
     const order = await this.prisma.$transaction(async (tx) => {
+      // Link/ hydrate CRM customer by phone (Shopify-style: checkout builds the customer base)
+      const customer = await tx.customer.upsert({
+        where: {
+          tenantId_phone: { tenantId: targetTenantId, phone: dto.customerPhone },
+        },
+        create: {
+          tenantId: targetTenantId,
+          name: dto.customerName,
+          phone: dto.customerPhone,
+          email: dto.customerEmail || null,
+          ordersCount: 1,
+          totalSpent: totalAmount,
+        },
+        update: {
+          name: dto.customerName,
+          email: dto.customerEmail || undefined,
+          ordersCount: { increment: 1 },
+          totalSpent: { increment: totalAmount },
+        },
+      });
+
       const newOrder = await tx.order.create({
         data: {
           tenantId: targetTenantId,
           orderNumber,
+          customerId: customer.id,
           customerName: dto.customerName,
           customerPhone: dto.customerPhone,
           customerEmail: dto.customerEmail,
