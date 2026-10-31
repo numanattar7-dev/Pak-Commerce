@@ -1,0 +1,226 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ----------------------------------------------------
+// 1. Multi-Tenant Core Architecture
+// ----------------------------------------------------
+
+enum TenantStatus {
+  TRIAL
+  ACTIVE
+  SUSPENDED
+}
+
+model Tenant {
+  id            String       @id @default(uuid())
+  name          String
+  subdomain     String       @unique // e.g. "khaadi", "gulahmed"
+  customDomain  String?      @unique // e.g. "khaadistore.com"
+  currency      String       @default("PKR")
+  status        TenantStatus @default(TRIAL)
+  logoUrl       String?
+  bannerUrl     String?
+  phoneSupport  String?      // WhatsApp or Support helpline
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  users         User[]
+  products      Product[]
+  orders        Order[]
+  shippingRules ShippingRule[]
+
+  @@map("tenants")
+}
+
+enum UserRole {
+  MERCHANT_ADMIN
+  STORE_MANAGER
+  STAFF
+}
+
+model User {
+  id           String    @id @default(uuid())
+  tenantId     String
+  tenant       Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name         String
+  email        String
+  phone        String?
+  passwordHash String
+  role         UserRole  @default(MERCHANT_ADMIN)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@unique([tenantId, email])
+  @@map("users")
+}
+
+// ----------------------------------------------------
+// 2. Product Catalog & Variants
+// ----------------------------------------------------
+
+model Product {
+  id             String           @id @default(uuid())
+  tenantId       String
+  tenant         Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  title          String
+  titleUrdu      String?          // Nastaliq / Urdu Title
+  description    String?
+  descriptionUr  String?
+  category       String           @default("General")
+  tags           String[]         @default([])
+  isActive       Boolean          @default(true)
+  isHalal        Boolean          @default(true) // Sharia Halal compliance flag
+  images         String[]         @default([])
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  variants       ProductVariant[]
+
+  @@index([tenantId, category])
+  @@map("products")
+}
+
+model ProductVariant {
+  id              String      @id @default(uuid())
+  productId       String
+  product         Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  title           String      // e.g. "Large / Blue" or "Unstitched 3-Piece"
+  sku             String?
+  price           Float       // Price in PKR
+  compareAtPrice  Float?      // Discount strike-through
+  stockQuantity   Int         @default(0)
+  weightGrams     Int         @default(500)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  orderItems      OrderItem[]
+
+  @@map("product_variants")
+}
+
+// ----------------------------------------------------
+// 3. Orders & Cash-on-Delivery (COD) Risk Engine
+// ----------------------------------------------------
+
+enum OrderStatus {
+  PENDING
+  VERIFIED
+  PROCESSING
+  DISPATCHED
+  DELIVERED
+  CANCELLED
+  RTO
+}
+
+enum PaymentMethod {
+  COD
+  IBFT
+  RAAST
+  JAZZCASH
+  EASYPAISA
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum RiskScore {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+model Order {
+  id               String            @id @default(uuid())
+  tenantId         String
+  tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  orderNumber      String            // e.g. "PK-1001"
+  customerName     String
+  customerPhone    String            // 03XX-XXXXXXX
+  customerEmail    String?
+  shippingCity     String            // Standardized Pakistani City
+  shippingAddress  String
+  shippingFee      Float           @default(200.00) // Shipping fee in PKR
+  subtotal         Float           // Order subtotal
+  totalAmount      Float           // Total including shipping
+  paymentMethod    PaymentMethod     @default(COD)
+  paymentStatus    PaymentStatus     @default(PENDING)
+  orderStatus      OrderStatus       @default(PENDING)
+  riskScore        RiskScore         @default(LOW)
+  notes            String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  items            OrderItem[]
+  codVerification  CodVerification?
+  bankProof        BankTransferProof?
+
+  @@unique([tenantId, orderNumber])
+  @@index([tenantId, customerPhone])
+  @@map("orders")
+}
+
+model OrderItem {
+  id         String         @id @default(uuid())
+  orderId    String
+  order      Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  variantId  String
+  variant    ProductVariant @relation(fields: [variantId], references: [id])
+  title      String
+  quantity   Int
+  price      Float        // Price in PKR
+
+  @@map("order_items")
+}
+
+model CodVerification {
+  id         String   @id @default(uuid())
+  orderId    String   @unique
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  otpCode    String
+  isVerified Boolean  @default(false)
+  verifiedAt DateTime?
+  attempts   Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  @@map("cod_verifications")
+}
+
+model BankTransferProof {
+  id              String   @id @default(uuid())
+  orderId         String   @unique
+  order           Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  bankName        String   // e.g. "Meezan Bank", "HBL", "Nayapay"
+  transactionRef  String
+  receiptImageUrl String
+  isApproved      Boolean  @default(false)
+  approvedAt      DateTime?
+  createdAt       DateTime @default(now())
+
+  @@map("bank_transfer_proofs")
+}
+
+// ----------------------------------------------------
+// 4. Shipping Rules (Pakistani Cities & Rates)
+// ----------------------------------------------------
+
+model ShippingRule {
+  id          String   @id @default(uuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  city        String   // e.g. "Karachi", "Lahore", "All Pakistan"
+  rate        Float     // Shipping rate in PKR
+  isFreeAbove Float?    // Free delivery threshold amount
+  createdAt   DateTime @default(now())
+
+  @@map("shipping_rules")
+}
