@@ -41,7 +41,7 @@ export class OrdersService {
     const variantMap = new Map(variants.map((v) => [v.id, v]));
 
     let subtotal = 0;
-    const pricedItems = [];
+    const pricedItems: { variantId: string; title: string; quantity: number; price: number }[] = [];
     for (const item of dto.items) {
       const variant = variantMap.get(item.variantId);
       if (!variant) {

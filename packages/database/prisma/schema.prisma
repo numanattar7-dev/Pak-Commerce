@@ -34,6 +34,10 @@ model Tenant {
   products      Product[]
   orders        Order[]
   shippingRules ShippingRule[]
+  customers     Customer[]
+  discounts     Discount[]
+  webhooks      Webhook[]
+  locations     Location[]
 
   @@map("tenants")
 }
@@ -92,7 +96,7 @@ model ProductVariant {
   product         Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
   title           String      // e.g. "Large / Blue" or "Unstitched 3-Piece"
   sku             String?
-  price           Float       // Price in PKR
+  price           Float       // Price in PKR (TODO Phase 1: money as Decimal)
   compareAtPrice  Float?      // Discount strike-through
   stockQuantity   Int         @default(0)
   weightGrams     Int         @default(500)
@@ -105,7 +109,80 @@ model ProductVariant {
 }
 
 // ----------------------------------------------------
-// 3. Orders & Cash-on-Delivery (COD) Risk Engine
+// 3. Customers (CRM) — Shopify parity
+// ----------------------------------------------------
+
+model Customer {
+  id          String   @id @default(uuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name        String
+  phone       String   // normalized: 03XXXXXXXXX
+  email       String?
+  tags        String[] @default([])
+  notes       String?
+  ordersCount Int      @default(0)
+  totalSpent  Float    @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  addresses CustomerAddress[]
+  orders    Order[]
+
+  @@unique([tenantId, phone])
+  @@index([tenantId, email])
+  @@map("customers")
+}
+
+model CustomerAddress {
+  id         String   @id @default(uuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  city       String
+  address    String
+  isDefault  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  @@map("customer_addresses")
+}
+
+// ----------------------------------------------------
+// 4. Discounts Engine — Shopify parity
+// ----------------------------------------------------
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED
+  FREE_SHIPPING
+}
+
+model Discount {
+  id          String       @id @default(uuid())
+  tenantId    String
+  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  code        String       // e.g. "SAVE10" (uppercase, unique per tenant)
+  description String?
+  type        DiscountType
+  value       Float        @default(0) // % (0-100) for PERCENTAGE, PKR for FIXED
+  minSubtotal Float?       // minimum cart subtotal to qualify (nullable = no minimum)
+  maxUses     Int?         // null = unlimited
+  usedCount   Int          @default(0)
+  firstOnly   Boolean      @default(false) // first-order-only
+  startsAt    DateTime?
+  endsAt      DateTime?
+  isActive    Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  orders Order[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId, isActive])
+  @@map("discounts")
+}
+
+// ----------------------------------------------------
+// 5. Orders & Cash-on-Delivery (COD) Risk Engine
 // ----------------------------------------------------
 
 enum OrderStatus {
@@ -144,14 +221,20 @@ model Order {
   tenantId         String
   tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   orderNumber      String            // e.g. "PK-1001"
+  // Linked CRM customer (optional — guest orders allowed)
+  customerId       String?
+  customer         Customer?         @relation(fields: [customerId], references: [id], onDelete: SetNull)
   customerName     String
   customerPhone    String            // 03XX-XXXXXXX
   customerEmail    String?
   shippingCity     String            // Standardized Pakistani City
   shippingAddress  String
-  shippingFee      Float           @default(200.00) // Shipping fee in PKR
-  subtotal         Float           // Order subtotal
-  totalAmount      Float           // Total including shipping
+  shippingFee      Float             @default(200.00) // Shipping fee in PKR
+  subtotal         Float             // Order subtotal (SERVER-computed)
+  discountAmount   Float             @default(0)     // applied discount value
+  discountId       String?
+  discount         Discount?         @relation(fields: [discountId], references: [id], onDelete: SetNull)
+  totalAmount      Float             // Total including shipping, minus discount
   paymentMethod    PaymentMethod     @default(COD)
   paymentStatus    PaymentStatus     @default(PENDING)
   orderStatus      OrderStatus       @default(PENDING)
@@ -160,12 +243,15 @@ model Order {
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
 
-  items            OrderItem[]
-  codVerification  CodVerification?
-  bankProof        BankTransferProof?
+  items           OrderItem[]
+  fulfillments    Fulfillment[]
+  refunds         Refund[]
+  codVerification CodVerification?
+  bankProof       BankTransferProof?
 
   @@unique([tenantId, orderNumber])
   @@index([tenantId, customerPhone])
+  @@index([tenantId, customerId])
   @@map("orders")
 }
 
@@ -177,40 +263,96 @@ model OrderItem {
   variant    ProductVariant @relation(fields: [variantId], references: [id])
   title      String
   quantity   Int
-  price      Float        // Price in PKR
+  price      Float          // Price in PKR (SERVER-computed)
 
   @@map("order_items")
 }
 
+// ----------------------------------------------------
+// 6. Fulfillment & Returns — Shopify parity
+// ----------------------------------------------------
+
+enum FulfillmentStatus {
+  PENDING
+  PARTIAL
+  FULFILLED
+  RESTOCKED
+}
+
+model Fulfillment {
+  id             String            @id @default(uuid())
+  orderId        String
+  order          Order             @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  status         FulfillmentStatus @default(PENDING)
+  trackingNumber String?
+  carrier        String?           // generic carrier; Pak couriers plug in Phase 4
+  shippedAt      DateTime?
+  deliveredAt    DateTime?
+  createdAt      DateTime          @default(now())
+
+  items FulfillmentItem[]
+
+  @@index([orderId])
+  @@map("fulfillments")
+}
+
+model FulfillmentItem {
+  id            String      @id @default(uuid())
+  fulfillmentId String
+  fulfillment   Fulfillment @relation(fields: [fulfillmentId], references: [id], onDelete: Cascade)
+  orderItemId   String      // reference to the original OrderItem
+  quantity      Int
+
+  @@map("fulfillment_items")
+}
+
+model Refund {
+  id          String   @id @default(uuid())
+  orderId     String
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  amount      Float    // refund amount in PKR
+  reason      String?
+  restock     Boolean  @default(true)
+  processedBy String?  // staff user id
+  createdAt   DateTime @default(now())
+
+  @@index([orderId])
+  @@map("refunds")
+}
+
+// ----------------------------------------------------
+// 7. COD Verification & Bank Transfer Proof
+// ----------------------------------------------------
+
 model CodVerification {
-  id         String   @id @default(uuid())
-  orderId    String   @unique
-  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  id         String    @id @default(uuid())
+  orderId    String    @unique
+  order      Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
   otpCode    String
-  isVerified Boolean  @default(false)
+  isVerified Boolean   @default(false)
   verifiedAt DateTime?
-  attempts   Int      @default(0)
-  createdAt  DateTime @default(now())
+  attempts   Int       @default(0)
+  createdAt  DateTime  @default(now())
 
   @@map("cod_verifications")
 }
 
 model BankTransferProof {
-  id              String   @id @default(uuid())
-  orderId         String   @unique
-  order           Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  bankName        String   // e.g. "Meezan Bank", "HBL", "Nayapay"
+  id              String    @id @default(uuid())
+  orderId         String    @unique
+  order           Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  bankName        String    // e.g. "Meezan Bank", "HBL", "Nayapay"
   transactionRef  String
   receiptImageUrl String
-  isApproved      Boolean  @default(false)
+  isApproved      Boolean   @default(false)
   approvedAt      DateTime?
-  createdAt       DateTime @default(now())
+  createdAt       DateTime  @default(now())
 
   @@map("bank_transfer_proofs")
 }
 
 // ----------------------------------------------------
-// 4. Shipping Rules (Pakistani Cities & Rates)
+// 8. Shipping Rules (Pakistani Cities & Rates)
 // ----------------------------------------------------
 
 model ShippingRule {
@@ -218,9 +360,66 @@ model ShippingRule {
   tenantId    String
   tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   city        String   // e.g. "Karachi", "Lahore", "All Pakistan"
-  rate        Float     // Shipping rate in PKR
-  isFreeAbove Float?    // Free delivery threshold amount
+  rate        Float    // Shipping rate in PKR
+  isFreeAbove Float?   // Free delivery threshold amount
   createdAt   DateTime @default(now())
 
   @@map("shipping_rules")
+}
+
+// ----------------------------------------------------
+// 9. Webhooks Event Engine — Shopify parity
+// ----------------------------------------------------
+
+enum WebhookStatus {
+  ACTIVE
+  PAUSED
+}
+
+model Webhook {
+  id        String        @id @default(uuid())
+  tenantId  String
+  tenant    Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  url       String        // target endpoint (HTTPS recommended)
+  events    String[]      // e.g. ["order.created", "order.fulfilled"]
+  secret    String        // used for HMAC-SHA256 payload signing
+  status    WebhookStatus @default(ACTIVE)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  deliveries WebhookDelivery[]
+
+  @@index([tenantId, status])
+  @@map("webhooks")
+}
+
+model WebhookDelivery {
+  id          String    @id @default(uuid())
+  webhookId   String
+  webhook     Webhook   @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+  event       String    // e.g. "order.created"
+  payload     String    // JSON-serialized payload
+  responseCode Int?
+  attempts    Int       @default(0)
+  success     Boolean   @default(false)
+  lastAttempt DateTime?
+
+  @@index([webhookId, success])
+  @@map("webhook_deliveries")
+}
+
+// ----------------------------------------------------
+// 10. Locations (multi-location inventory scaffold)
+// ----------------------------------------------------
+
+model Location {
+  id        String  @id @default(uuid())
+  tenantId  String
+  tenant    Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name      String  // e.g. "Karachi Warehouse", "Lahore Gulberg Store"
+  address   String?
+  isDefault Boolean @default(false)
+  createdAt DateTime @default(now())
+
+  @@map("locations")
 }
