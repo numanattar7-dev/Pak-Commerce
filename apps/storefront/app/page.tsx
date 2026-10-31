@@ -61,6 +61,7 @@ export default function StorefrontPage() {
   const [shippingCity, setShippingCity] = useState('Karachi');
   const [paymentMethod, setPaymentMethod] = useState<'COD' | 'IBFT'>('COD');
   const [submittingOrder, setSubmittingOrder] = useState(false);
+  const [orderError, setOrderError] = useState<string | null>(null);
 
   // 450+ standardized Pakistani cities snippet (most common)
   const pakistaniCities = [
@@ -200,6 +201,7 @@ export default function StorefrontPage() {
     }
 
     setSubmittingOrder(true);
+    setOrderError(null);
 
     try {
       // Send real order request to Backend API
@@ -217,7 +219,6 @@ export default function StorefrontPage() {
           quantity: item.quantity,
           price: item.variant.price,
         })),
-        totalAmount: cartTotal + shippingFee,
       };
 
       const res = await fetch('http://localhost:4000/orders', {
@@ -232,29 +233,24 @@ export default function StorefrontPage() {
         setCart([]);
         setIsCheckoutOpen(false);
       } else {
-        // Mock success if backend route requires adjustments
-        setOrderSuccess({
-          id: `PK-${Math.floor(1000 + Math.random() * 9000)}`,
-          customerName,
-          totalAmount: cartTotal + shippingFee,
-          paymentMethod,
-          shippingCity,
-        });
-        setCart([]);
-        setIsCheckoutOpen(false);
+        // Show the REAL error from the backend — never fake success
+        let message = 'آرڈر جمع کرائے جانے میں مسئلہ ہوا۔ براہ کرم دوبارہ کوشش کریں۔';
+        try {
+          const errJson = await res.json();
+          if (errJson?.message) {
+            message = Array.isArray(errJson.message)
+              ? errJson.message.join('۔ ')
+              : String(errJson.message);
+          }
+        } catch (jsonErr) {
+          // response was not JSON — keep default message
+        }
+        setOrderError(message);
       }
     } catch (err) {
       console.error('Order placement error:', err);
-      // Fallback display
-      setOrderSuccess({
-        id: `PK-${Math.floor(1000 + Math.random() * 9000)}`,
-        customerName,
-        totalAmount: cartTotal + shippingFee,
-        paymentMethod,
-        shippingCity,
-      });
-      setCart([]);
-      setIsCheckoutOpen(false);
+      // Network/server failure — show real error, keep cart intact
+      setOrderError('سرور سے رابطہ نہیں ہو سکا۔ براہ کرم انٹرنیٹ چیک کریں اور دوبارہ کوشش کریں۔');
     } finally {
       setSubmittingOrder(false);
     }
@@ -677,6 +673,12 @@ export default function StorefrontPage() {
                   </div>
                 </div>
               </div>
+
+              {orderError && (
+                <div className="p-3 rounded-xl border border-red-200 bg-red-50 text-xs text-red-700 font-semibold">
+                  ⚠️ {orderError}
+                </div>
+              )}
 
               <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 text-xs flex justify-between font-bold">
                 <span>قابل ادائیگی رقم (Payable Amount):</span>

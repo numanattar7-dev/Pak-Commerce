@@ -14,15 +14,17 @@ export class OrderItemDto {
   variantId: string;
 
   @IsString()
-  title: string;
+  @IsOptional()
+  title?: string; // informational only — server uses variant title from DB
 
   @IsNumber()
   @Min(1)
   quantity: number;
 
   @IsNumber()
+  @IsOptional()
   @Min(0)
-  price: number;
+  price?: number; // informational only — server enforces price from DB
 }
 
 export class CreateOrderDto {

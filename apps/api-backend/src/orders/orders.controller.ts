@@ -1,4 +1,14 @@
-import { Controller, Get, Post, Put, Body, Param, Query, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Body,
+  Param,
+  Query,
+  UseGuards,
+  BadRequestException,
+} from '@nestjs/common';
 import { OrdersService } from './orders.service';
 import { CreateOrderDto, VerifyOtpDto, UpdateOrderStatusDto } from './dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -54,10 +64,13 @@ export class OrdersController {
   // Public order tracking
   @Get('track/:orderNumber/:phone')
   async trackOrder(
-    @CurrentUser() user,
     @Param('orderNumber') orderNumber: string,
     @Param('phone') phone: string,
+    @Query('subdomain') subdomain?: string,
   ) {
-    return this.ordersService.trackOrder(user.tenantId, orderNumber, phone);
+    if (!subdomain) {
+      throw new BadRequestException('subdomain query parameter is required');
+    }
+    return this.ordersService.trackOrder(subdomain, orderNumber, phone);
   }
 }
