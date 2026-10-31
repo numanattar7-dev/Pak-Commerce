@@ -6,7 +6,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationService } from '../notifications/notification.service';
 import { DiscountsService } from '../discounts/discounts.service';
-import { CreateOrderDto, VerifyOtpDto, UpdateOrderStatusDto } from './dto';
+import { CreateOrderDto, VerifyOtpDto, UpdateOrderStatusDto, CreateFulfillmentDto, CreateRefundDto } from './dto';
 import { Discount } from '@prisma/client';
 
 @Injectable()
@@ -300,6 +300,11 @@ export class OrdersService {
       where: { id, tenantId },
       include: {
         items: true,
+        fulfillments: {
+          include: { items: true },
+          orderBy: { createdAt: 'desc' },
+        },
+        refunds: true,
         codVerification: true,
         bankProof: true,
       },
@@ -320,6 +325,14 @@ export class OrdersService {
     // Business rule: COD cash is physically collected at delivery
     if (dto.status === 'DELIVERED' && order.paymentMethod === 'COD') {
       data.paymentStatus = 'PAID';
+    }
+
+    // Stamp delivered time on outstanding fulfillments
+    if (dto.status === 'DELIVERED') {
+      await this.prisma.fulfillment.updateMany({
+        where: { orderId: id },
+        data: { deliveredAt: new Date() },
+      });
     }
 
     // Restore stock when an active order is cancelled/RTO'd
@@ -365,6 +378,185 @@ export class OrdersService {
     }
 
     return order;
+  }
+
+  // ------------------------------------------------------
+  // Fulfillment (shipping & packing) — Shopify parity
+  // ------------------------------------------------------
+
+  async listFulfillments(tenantId: string, orderId: string) {
+    const order = await this.prisma.order.findFirst({
+      where: { id: orderId, tenantId },
+      select: { id: true },
+    });
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+    return this.prisma.fulfillment.findMany({
+      where: { orderId },
+      include: { items: true },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async createFulfillment(
+    tenantId: string,
+    id: string,
+    dto: CreateFulfillmentDto,
+  ) {
+    const order = await this.findOne(tenantId, id);
+
+    if (['CANCELLED', 'RTO', 'DELIVERED'].includes(order.orderStatus)) {
+      throw new BadRequestException(
+        `Cannot fulfill an order in ${order.orderStatus} state`,
+      );
+    }
+
+    // How much of each order item has already been fulfilled?
+    const existing = await this.prisma.fulfillment.findMany({
+      where: { orderId: order.id },
+      include: { items: true },
+    });
+    const fulfilledQty = new Map<string, number>();
+    for (const f of existing) {
+      for (const fi of f.items) {
+        fulfilledQty.set(fi.orderItemId, (fulfilledQty.get(fi.orderItemId) || 0) + fi.quantity);
+      }
+    }
+
+    const openItems = order.items.filter(
+      (oi) => oi.quantity - (fulfilledQty.get(oi.id) || 0) > 0,
+    );
+
+    // Plan this fulfillment (explicit lines, or ALL remaining by default)
+    const planned = new Map<string, number>();
+    if (dto.items && dto.items.length) {
+      for (const line of dto.items) {
+        const oi = order.items.find((o) => o.id === line.orderItemId);
+        if (!oi) {
+          throw new BadRequestException(`Order item ${line.orderItemId} is not part of this order`);
+        }
+        const remaining = oi.quantity - (fulfilledQty.get(oi.id) || 0);
+        if (line.quantity > remaining) {
+          throw new BadRequestException(
+            `Cannot fulfill ${line.quantity} of "${oi.title}" — only ${remaining} remaining`,
+          );
+        }
+        planned.set(oi.id, (planned.get(oi.id) || 0) + line.quantity);
+      }
+    } else {
+      for (const oi of openItems) {
+        planned.set(oi.id, oi.quantity - (fulfilledQty.get(oi.id) || 0));
+      }
+    }
+
+    if (planned.size === 0) {
+      throw new BadRequestException('Nothing left to fulfill on this order');
+    }
+
+    const stillOpen = openItems.some(
+      (oi) =>
+        oi.quantity - (fulfilledQty.get(oi.id) || 0) - (planned.get(oi.id) || 0) > 0,
+    );
+    const status = stillOpen ? 'PARTIAL' : 'FULFILLED';
+
+    const fulfillment = await this.prisma.fulfillment.create({
+      data: {
+        orderId: order.id,
+        status,
+        trackingNumber: dto.trackingNumber,
+        carrier: dto.carrier,
+        items: {
+          create: Array.from(planned.entries()).map(([orderItemId, quantity]) => ({
+            orderItemId,
+            quantity,
+          })),
+        },
+      },
+      include: { items: true },
+    });
+
+    // Shipping has started
+    await this.prisma.order.update({
+      where: { id: order.id },
+      data: { orderStatus: 'DISPATCHED' },
+    });
+
+    return fulfillment;
+  }
+
+  // ------------------------------------------------------
+  // Refunds — Shopify parity
+  // ------------------------------------------------------
+
+  async createRefund(
+    tenantId: string,
+    id: string,
+    dto: CreateRefundDto,
+    processedBy?: string,
+  ) {
+    const order = await this.findOne(tenantId, id);
+
+    if (order.orderStatus === 'CANCELLED' || order.orderStatus === 'RTO') {
+      throw new BadRequestException('Refund not allowed — order is already closed');
+    }
+
+    const fullAmount = this.discountsService.round2(order.totalAmount);
+    const amount =
+      dto.amount !== undefined && dto.amount !== null
+        ? this.discountsService.round2(dto.amount)
+        : fullAmount;
+
+    if (amount <= 0 || amount > fullAmount) {
+      throw new BadRequestException(
+        `Refund amount must be between 0 and Rs.${fullAmount}`,
+      );
+    }
+
+    const isFull = amount >= fullAmount;
+    const restock = dto.restock ?? false;
+
+    // Restock returned goods (only when explicitly asked — the guard above
+    // guarantees the order is still open, so no double-restock risk here)
+    if (restock && order.items && order.items.length) {
+      await this.prisma.$transaction(
+        order.items.map((item) =>
+          this.prisma.productVariant.update({
+            where: { id: item.variantId },
+            data: { stockQuantity: { increment: item.quantity } },
+          }),
+        ),
+      );
+    }
+
+    const refund = await this.prisma.refund.create({
+      data: {
+        orderId: order.id,
+        amount,
+        reason: dto.reason,
+        restock,
+        processedBy,
+      },
+    });
+
+    // Business rule: full refund closes the order financially & administratively
+    const orderData: any = {};
+    if (isFull) {
+      orderData.paymentStatus = 'REFUNDED';
+      orderData.orderStatus = 'CANCELLED';
+    }
+    if (Object.keys(orderData).length) {
+      await this.prisma.order.update({ where: { id: order.id }, data: orderData });
+    }
+
+    return {
+      refund,
+      applied: {
+        paymentStatus: isFull ? 'REFUNDED' : order.paymentStatus,
+        orderStatus: isFull ? 'CANCELLED' : order.orderStatus,
+        restocked: restock,
+      },
+    };
   }
 
   // Helper methods

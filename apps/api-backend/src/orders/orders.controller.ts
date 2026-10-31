@@ -10,7 +10,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { OrdersService } from './orders.service';
-import { CreateOrderDto, VerifyOtpDto, UpdateOrderStatusDto } from './dto';
+import { CreateOrderDto, VerifyOtpDto, UpdateOrderStatusDto, CreateFulfillmentDto, CreateRefundDto } from './dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
@@ -59,6 +59,32 @@ export class OrdersController {
   @Post(':id/verify-otp')
   async verifyOtp(@CurrentUser() user, @Body() dto: VerifyOtpDto) {
     return this.ordersService.verifyOtp(user.tenantId, dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get(':id/fulfillments')
+  async listFulfillments(@CurrentUser() user, @Param('id') id: string) {
+    return this.ordersService.listFulfillments(user.tenantId, id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post(':id/fulfillments')
+  async createFulfillment(
+    @CurrentUser() user,
+    @Param('id') id: string,
+    @Body() dto: CreateFulfillmentDto,
+  ) {
+    return this.ordersService.createFulfillment(user.tenantId, id, dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post(':id/refund')
+  async refund(
+    @CurrentUser() user,
+    @Param('id') id: string,
+    @Body() dto: CreateRefundDto,
+  ) {
+    return this.ordersService.createRefund(user.tenantId, id, dto, user.id);
   }
 
   // Public order tracking

@@ -5,6 +5,8 @@ import {
   IsOptional,
   IsEnum,
   IsEmail,
+  IsBoolean,
+  IsInt,
   Matches,
   Min,
 } from 'class-validator';
@@ -77,4 +79,45 @@ export class VerifyOtpDto {
 export class UpdateOrderStatusDto {
   @IsEnum(['PENDING', 'VERIFIED', 'PROCESSING', 'DISPATCHED', 'DELIVERED', 'CANCELLED', 'RTO'])
   status: 'PENDING' | 'VERIFIED' | 'PROCESSING' | 'DISPATCHED' | 'DELIVERED' | 'CANCELLED' | 'RTO';
+}
+
+export class FulfillmentItemDto {
+  @IsString()
+  orderItemId: string;
+
+  @IsInt()
+  @Min(1)
+  quantity: number;
+}
+
+export class CreateFulfillmentDto {
+  // Omit = fulfill ALL remaining quantities (1-click fulfill)
+  @IsArray()
+  @IsOptional()
+  items?: FulfillmentItemDto[];
+
+  @IsString()
+  @IsOptional()
+  trackingNumber?: string;
+
+  @IsString()
+  @IsOptional()
+  carrier?: string; // e.g. "TCS", "Leopards" — Pak couriers plug in Phase 4
+}
+
+export class CreateRefundDto {
+  // Omit = full refund of order total
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  amount?: number;
+
+  @IsString()
+  @IsOptional()
+  reason?: string;
+
+  // Only when returned goods re-enter inventory (default false — money-only refund)
+  @IsBoolean()
+  @IsOptional()
+  restock?: boolean;
 }
