@@ -58,6 +58,11 @@ export class CreateOrderDto {
   @IsString()
   @IsOptional()
   notes?: string;
+
+  // Only the CODE travels from the client — value/amount are computed server-side
+  @IsString()
+  @IsOptional()
+  discountCode?: string;
 }
 
 export class VerifyOtpDto {

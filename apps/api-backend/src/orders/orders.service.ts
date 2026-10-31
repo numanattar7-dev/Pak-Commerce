@@ -5,13 +5,16 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationService } from '../notifications/notification.service';
+import { DiscountsService } from '../discounts/discounts.service';
 import { CreateOrderDto, VerifyOtpDto, UpdateOrderStatusDto } from './dto';
+import { Discount } from '@prisma/client';
 
 @Injectable()
 export class OrdersService {
   constructor(
     private prisma: PrismaService,
     private notificationService: NotificationService,
+    private discountsService: DiscountsService,
   ) {}
 
   async create(tenantId: string, dto: CreateOrderDto) {
@@ -66,7 +69,31 @@ export class OrdersService {
 
     // Get shipping fee based on city
     const shippingFee = await this.getShippingFee(targetTenantId, dto.shippingCity);
-    const totalAmount = subtotal + shippingFee;
+
+    // Discounts: evaluated server-side ONLY — the client just sends the code string
+    let discount: Discount | null = null;
+    let discountAmount = 0;
+    if (dto.discountCode) {
+      const evaluation = await this.discountsService.evaluateForTenant(
+        targetTenantId,
+        {
+          code: dto.discountCode,
+          subtotal,
+          shippingFee,
+          customerPhone: dto.customerPhone,
+        },
+      );
+      if (!evaluation.valid) {
+        throw new BadRequestException(evaluation.reason || 'Invalid discount code');
+      }
+      discount = evaluation.discount ?? null;
+      discountAmount = evaluation.discountAmount ?? 0;
+    }
+
+    // total = subtotal + shipping − discount (discount is capped, so never negative)
+    const totalAmount = this.discountsService.round2(
+      subtotal + shippingFee - discountAmount,
+    );
 
     // Determine risk score based on server-verified data
     const riskScore = this.calculateRiskScore(dto, subtotal);
@@ -110,10 +137,31 @@ export class OrdersService {
           riskScore,
           subtotal,
           shippingFee,
+          discountId: discount?.id,
+          discountAmount,
           totalAmount,
           notes: dto.notes,
         },
       });
+
+      // Consume ONE usage of the discount atomically (race-safe against maxUses)
+      if (discount) {
+        const bumped = await tx.discount.updateMany({
+          where: {
+            id: discount.id,
+            ...(discount.maxUses !== null
+              ? { usedCount: { lt: discount.maxUses } }
+              : {}),
+          },
+          data: { usedCount: { increment: 1 } },
+        });
+        if (bumped.count === 0) {
+          // Throwing rolls back the whole order transaction
+          throw new BadRequestException(
+            'Discount code limit reached during checkout — please retry without the code.',
+          );
+        }
+      }
 
       // Create order items and deduct stock atomically (oversell guard)
       for (const item of pricedItems) {
