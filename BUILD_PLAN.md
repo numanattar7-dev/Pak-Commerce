@@ -98,17 +98,20 @@ Acceptance: login/token works on every endpoint; code is committed to Git; stagi
 
 ---
 
-# PHASE 2 — Shopify Core: Admin (~4 weeks) — NEXT
+# PHASE 2 — Shopify Core: Admin (~4 weeks) — DONE
 
-- Home: analytics widgets (endpoints ready)
-- Orders: list, detail, fulfill, refund, book shipment, FBR invoice, resend OTP
-- Products: list, create with variants + images (upload endpoint ready), CSV import/export, collections editor
-- Discounts editor + usage stats
-- Customers list/detail
-- Webhooks manager (endpoints ready)
-- Settings: tenant profile, shipping rules by city
+- Home: analytics widgets (summary KPIs, 30-day revenue chart, pipeline breakdown, top products) — done
+- Orders: list (filter/pagination/search) + detail with fulfill (1-click/partial), refund (restock control), book shipment (rate-compare TCS/Leopards/PostEx/Trax + tracking), FBR invoice, OTP verify/resend, status transitions — done
+- Products: list, create/edit with variants + image upload, CSV import/export — done
+- Collections editor with product membership picker — done
+- Discounts editor + usage stats + status filters — done
+- Customers list/detail (orders, addresses, totals) + create — done
+- Webhooks manager: endpoints CRUD, event picker, secret reveal, deliveries log, test-send — done
+- Settings: tenant profile + shipping rules by city (new `/shipping-rules` CRUD) — done
+- Login gate (JWT in localStorage) + persistent app shell with API status — done
+- Verified in browser: all 8 pages render live data with 0 console errors; merchant flow executed end-to-end via UI (rates → fulfill → TCS booking → FBR invoice)
 
-# PHASE 3 — Shopify Core: Storefront (~3 weeks) — partially started
+# PHASE 3 — Shopify Core: Storefront (~3 weeks) — NEXT
 
 - Home + catalog (done in prototype form), product detail page, cart, checkout (with discount box — done), order status page + public tracking (`GET /orders/track/:orderNumber/:phone` ready)
 - Multi-page Next.js routes instead of single-page prototype
