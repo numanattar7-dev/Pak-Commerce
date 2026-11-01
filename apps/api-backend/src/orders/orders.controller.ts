@@ -62,6 +62,19 @@ export class OrdersController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Post(':id/resend-otp')
+  async resendOtp(@CurrentUser() user, @Param('id') id: string) {
+    return this.ordersService.resendOtp(user.tenantId, id);
+  }
+
+  // ---- FBR POS (sandbox) ----
+  @UseGuards(JwtAuthGuard)
+  @Post(':id/fbr-invoice')
+  async createFbrInvoice(@CurrentUser() user, @Param('id') id: string) {
+    return this.ordersService.createFbrInvoice(user.tenantId, id, user.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Get(':id/fulfillments')
   async listFulfillments(@CurrentUser() user, @Param('id') id: string) {
     return this.ordersService.listFulfillments(user.tenantId, id);

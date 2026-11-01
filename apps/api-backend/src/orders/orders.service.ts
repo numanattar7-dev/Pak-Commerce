@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
+import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationService } from '../notifications/notification.service';
 import { DiscountsService } from '../discounts/discounts.service';
@@ -192,7 +193,7 @@ export class OrdersService {
         }
       }
 
-      // Generate OTP for COD orders
+      // Generate OTP for COD orders (5-minute validity window)
       if (dto.paymentMethod === 'COD') {
         const otpCode = this.generateOTP();
         await tx.codVerification.create({
@@ -200,6 +201,7 @@ export class OrdersService {
             orderId: newOrder.id,
             otpCode,
             isVerified: false,
+            expiresAt: new Date(Date.now() + 5 * 60 * 1000),
           },
         });
 
@@ -272,6 +274,23 @@ export class OrdersService {
       throw new BadRequestException('OTP already verified');
     }
 
+    if (
+      order.codVerification.attempts >= 5
+    ) {
+      throw new BadRequestException(
+        'Too many attempts. Request a new OTP (resend) and try again.',
+      );
+    }
+
+    if (
+      order.codVerification.expiresAt &&
+      order.codVerification.expiresAt.getTime() < Date.now()
+    ) {
+      throw new BadRequestException(
+        'OTP expired. Please use the "Resend OTP" option and try the new code.',
+      );
+    }
+
     if (order.codVerification.otpCode !== dto.otpCode) {
       // Increment attempts
       await this.prisma.codVerification.update({
@@ -297,6 +316,144 @@ export class OrdersService {
     });
 
     return { success: true, message: 'Order verified successfully' };
+  }
+
+  // ------------------------------------------------------
+  // Resend COD OTP (Pakistan COD flow) — regenerates code + 5 min window
+  // ------------------------------------------------------
+
+  async resendOtp(tenantId: string, orderId: string) {
+    const order = await this.findOne(tenantId, orderId);
+
+    if (order.paymentMethod !== 'COD') {
+      throw new BadRequestException('OTP resend applies to COD orders only');
+    }
+    if (
+      order.orderStatus === 'CANCELLED' ||
+      order.orderStatus === 'RTO'
+    ) {
+      throw new BadRequestException('Order is closed — OTP resend not allowed');
+    }
+
+    const existing = await this.prisma.codVerification.findUnique({
+      where: { orderId },
+    });
+    if (existing?.isVerified) {
+      throw new BadRequestException('Order is already OTP-verified');
+    }
+
+    const otpCode = this.generateOTP();
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+
+    await this.prisma.codVerification.upsert({
+      where: { orderId },
+      create: {
+        orderId,
+        otpCode,
+        isVerified: false,
+        expiresAt,
+      },
+      update: {
+        otpCode,
+        expiresAt,
+        attempts: 0, // fresh window starts with a clean slate
+      },
+    });
+
+    // Notify via both channels (simulation logs when Twilio is not configured)
+    try {
+      await Promise.all([
+        this.notificationService.sendOtpSms(order.customerPhone, otpCode, order.orderNumber),
+        this.notificationService.sendWhatsAppOtp(order.customerPhone, otpCode, order.orderNumber),
+      ]);
+    } catch (err) {
+      console.error('[COD OTP Resend Notification] Failed:', err);
+    }
+    console.log(`[COD OTP Resend] Order ${order.orderNumber}: ${otpCode} (expires ${expiresAt.toISOString()})`);
+
+    return {
+      success: true,
+      message: 'A new OTP has been sent via SMS and WhatsApp',
+      otpExpiresAt: expiresAt,
+    };
+  }
+
+  // ------------------------------------------------------
+  // FBR POS integration (sandbox) — invoice number is issued per order
+  // ------------------------------------------------------
+
+  async createFbrInvoice(tenantId: string, orderId: string, processedBy?: string) {
+    const order = await this.findOne(tenantId, orderId);
+
+    if (order.orderStatus === 'CANCELLED' || order.orderStatus === 'RTO') {
+      throw new BadRequestException(
+        'FBR invoice not allowed — order is closed (CANCELLED/RTO)',
+      );
+    }
+    if (order.paymentStatus === 'REFUNDED') {
+      throw new BadRequestException('FBR invoice not allowed — payment refunded');
+    }
+
+    // Idempotent: re-issuing returns the original invoice
+    if (order.fbrInvoiceNo) {
+      return {
+        invoiceNo: order.fbrInvoiceNo,
+        invoiceAt: order.fbrInvoiceAt,
+        orderNumber: order.orderNumber,
+        idempotent: true,
+      };
+    }
+
+    const stamp = new Date();
+    const datePart = `${stamp.getUTCFullYear().toString().slice(2)}${String(stamp.getUTCMonth() + 1).padStart(2, '0')}${String(stamp.getUTCDate()).padStart(2, '0')}`;
+    const randomPart = crypto.randomBytes(4).toString('hex').toUpperCase();
+    const invoiceNo = `FBR-${datePart}-${randomPart}`;
+
+    const updated = await this.prisma.order.update({
+      where: { id: orderId },
+      data: { fbrInvoiceNo: invoiceNo, fbrInvoiceAt: stamp },
+    });
+
+    console.log(
+      `[FBR SANDBOX] Invoice ${invoiceNo} issued for ${order.orderNumber} by ${processedBy || 'merchant'}`,
+    );
+
+    return {
+      invoiceNo: updated.fbrInvoiceNo,
+      invoiceAt: updated.fbrInvoiceAt,
+      orderNumber: updated.orderNumber,
+      idempotent: false,
+    };
+  }
+
+  listFbrInvoices(tenantId: string, page = 1, limit = 20) {
+    const skip = (page - 1) * limit;
+    const where = { tenantId, fbrInvoiceNo: { not: null } };
+
+    return Promise.all([
+      this.prisma.order.findMany({
+        where,
+        skip,
+        take: limit,
+        select: {
+          id: true,
+          orderNumber: true,
+          fbrInvoiceNo: true,
+          fbrInvoiceAt: true,
+          totalAmount: true,
+          paymentMethod: true,
+          paymentStatus: true,
+          orderStatus: true,
+          customerName: true,
+          customerPhone: true,
+        },
+        orderBy: { fbrInvoiceAt: 'desc' as const },
+      }),
+      this.prisma.order.count({ where }),
+    ]).then(([data, total]) => ({
+      data,
+      meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
+    }));
   }
 
   async findAll(tenantId: string, page = 1, limit = 20, status?: string) {
@@ -393,6 +550,15 @@ export class OrdersService {
       to: updated.orderStatus,
       paymentStatus: updated.paymentStatus,
     });
+
+    // English SMS/WhatsApp status update to the customer (non-blocking)
+    if (order.customerPhone) {
+      void this.notificationService
+        .notifyStatusUpdate(order.customerPhone, updated.orderStatus, {
+          orderNumber: updated.orderNumber,
+        })
+        .catch(() => undefined);
+    }
 
     return updated;
   }
@@ -534,6 +700,15 @@ export class OrdersService {
       carrier: fulfillment.carrier,
       items: fulfillment.items,
     });
+
+    // English SMS/WhatsApp "shipped" notification (non-blocking)
+    void this.notificationService
+      .notifyStatusUpdate(order.customerPhone, 'DISPATCHED', {
+        orderNumber: order.orderNumber,
+        trackingNumber: fulfillment.trackingNumber,
+        carrier: fulfillment.carrier,
+      })
+      .catch(() => undefined);
 
     return fulfillment;
   }
