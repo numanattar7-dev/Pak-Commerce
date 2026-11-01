@@ -11,6 +11,7 @@ import { DiscountsModule } from './discounts/discounts.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { CouriersModule } from './couriers/couriers.module';
+import { ShippingRulesModule } from './shipping-rules/shipping-rules.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { CouriersModule } from './couriers/couriers.module';
     WebhooksModule,
     AnalyticsModule,
     CouriersModule,
+    ShippingRulesModule,
   ],
 })
 export class AppModule {}
