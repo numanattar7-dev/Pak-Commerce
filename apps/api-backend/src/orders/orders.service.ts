@@ -6,6 +6,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationService } from '../notifications/notification.service';
 import { DiscountsService } from '../discounts/discounts.service';
+import { WebhooksService } from '../webhooks/webhooks.service';
 import { CreateOrderDto, VerifyOtpDto, UpdateOrderStatusDto, CreateFulfillmentDto, CreateRefundDto } from './dto';
 import { Discount } from '@prisma/client';
 
@@ -15,6 +16,7 @@ export class OrdersService {
     private prisma: PrismaService,
     private notificationService: NotificationService,
     private discountsService: DiscountsService,
+    private webhooksService: WebhooksService,
   ) {}
 
   async create(tenantId: string, dto: CreateOrderDto) {
@@ -217,10 +219,39 @@ export class OrdersService {
       return newOrder;
     });
 
+    // order.created webhook (never blocks checkout)
+    const createdFull = await this.prisma.order.findUnique({
+      where: { id: order.id },
+      include: { items: true },
+    });
+    if (createdFull) {
+      this.emitOrderCreated(targetTenantId, createdFull);
+    }
+
     return {
       ...order,
       otpRequired: dto.paymentMethod === 'COD',
     };
+  }
+
+  // order.created webhook — fired outside the transaction, non-blocking
+  private emitOrderCreated(tenantId: string, order: any) {
+    void this.webhooksService.dispatchEvent(tenantId, 'order.created', {
+      id: order.id,
+      orderNumber: order.orderNumber,
+      customerId: order.customerId,
+      customerName: order.customerName,
+      customerPhone: order.customerPhone,
+      shippingCity: order.shippingCity,
+      subtotal: order.subtotal,
+      shippingFee: order.shippingFee,
+      discountAmount: order.discountAmount,
+      totalAmount: order.totalAmount,
+      paymentMethod: order.paymentMethod,
+      paymentStatus: order.paymentStatus,
+      orderStatus: order.orderStatus,
+      items: order.items,
+    });
   }
 
   async verifyOtp(tenantId: string, dto: VerifyOtpDto) {
@@ -349,10 +380,21 @@ export class OrdersService {
       );
     }
 
-    return this.prisma.order.update({
+    const updated = await this.prisma.order.update({
       where: { id },
       data,
     });
+
+    // order.status_changed webhook (never blocks admin action)
+    void this.webhooksService.dispatchEvent(tenantId, 'order.status_changed', {
+      id: updated.id,
+      orderNumber: updated.orderNumber,
+      from: order.orderStatus,
+      to: updated.orderStatus,
+      paymentStatus: updated.paymentStatus,
+    });
+
+    return updated;
   }
 
   // Public: Get order by phone for tracking
@@ -482,6 +524,17 @@ export class OrdersService {
       data: { orderStatus: 'DISPATCHED' },
     });
 
+    // order.fulfilled webhook (never blocks fulfillment)
+    void this.webhooksService.dispatchEvent(tenantId, 'order.fulfilled', {
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      fulfillmentId: fulfillment.id,
+      status: fulfillment.status,
+      trackingNumber: fulfillment.trackingNumber,
+      carrier: fulfillment.carrier,
+      items: fulfillment.items,
+    });
+
     return fulfillment;
   }
 
@@ -548,6 +601,17 @@ export class OrdersService {
     if (Object.keys(orderData).length) {
       await this.prisma.order.update({ where: { id: order.id }, data: orderData });
     }
+
+    // order.refunded webhook (never blocks refunds)
+    void this.webhooksService.dispatchEvent(tenantId, 'order.refunded', {
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      refundId: refund.id,
+      amount: refund.amount,
+      reason: refund.reason,
+      restocked: restock,
+      isFullRefund: isFull,
+    });
 
     return {
       refund,

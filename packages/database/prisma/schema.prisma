@@ -38,6 +38,7 @@ model Tenant {
   discounts     Discount[]
   webhooks      Webhook[]
   locations     Location[]
+  collections   Collection[]
 
   @@map("tenants")
 }
@@ -85,6 +86,7 @@ model Product {
   updatedAt      DateTime         @updatedAt
 
   variants       ProductVariant[]
+  collections    CollectionProduct[]
 
   @@index([tenantId, category])
   @@map("products")
@@ -240,6 +242,8 @@ model Order {
   orderStatus      OrderStatus       @default(PENDING)
   riskScore        RiskScore         @default(LOW)
   notes            String?
+  fbrInvoiceNo     String?           // FBR POS sandbox invoice number
+  fbrInvoiceAt     DateTime?
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
 
@@ -332,6 +336,7 @@ model CodVerification {
   isVerified Boolean   @default(false)
   verifiedAt DateTime?
   attempts   Int       @default(0)
+  expiresAt  DateTime? // OTP validity window (mock SMS flow)
   createdAt  DateTime  @default(now())
 
   @@map("cod_verifications")
@@ -393,18 +398,57 @@ model Webhook {
   @@map("webhooks")
 }
 
+// ----------------------------------------------------
+// 9b. Collections (Shopify parity) — smart/manual grouping
+// ----------------------------------------------------
+
+model Collection {
+  id       String  @id @default(uuid())
+  tenantId String
+  tenant   Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  title    String
+  handle   String  // URL slug, unique per tenant
+  rules    String? // reserved for smart collection rule JSON
+  isActive Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  products CollectionProduct[]
+
+  @@unique([tenantId, handle])
+  @@index([tenantId, isActive])
+  @@map("collections")
+}
+
+model CollectionProduct {
+  id           String    @id @default(uuid())
+  collectionId String
+  collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  productId    String
+  product      Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  position     Int       @default(0)
+  createdAt    DateTime  @default(now())
+
+  @@unique([collectionId, productId])
+  @@map("collection_products")
+}
+
 model WebhookDelivery {
-  id          String    @id @default(uuid())
-  webhookId   String
-  webhook     Webhook   @relation(fields: [webhookId], references: [id], onDelete: Cascade)
-  event       String    // e.g. "order.created"
-  payload     String    // JSON-serialized payload
+  id           String    @id @default(uuid())
+  webhookId    String
+  webhook      Webhook   @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+  event        String    // e.g. "order.created"
+  payload      String    // JSON-serialized payload
   responseCode Int?
-  attempts    Int       @default(0)
-  success     Boolean   @default(false)
-  lastAttempt DateTime?
+  attempts     Int       @default(0)
+  success      Boolean   @default(false)
+  lastAttempt  DateTime?
+  status       String    @default("PENDING") // PENDING | DELIVERED | FAILED
+  nextRetryAt  DateTime? // set while retrying with backoff
+  error        String?   // last transport/HTTP error
 
   @@index([webhookId, success])
+  @@index([status, nextRetryAt])
   @@map("webhook_deliveries")
 }
 
