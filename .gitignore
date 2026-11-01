@@ -32,3 +32,5 @@ desktop.ini
 
 # Editor
 .idea/
+
+apps/api-backend/uploads/

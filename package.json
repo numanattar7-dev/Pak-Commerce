@@ -16,6 +16,7 @@
     "db:push": "turbo run db:push"
   },
   "devDependencies": {
+    "@types/multer": "^2.3.0",
     "autoprefixer": "^10.6.2",
     "prettier": "^3.2.5",
     "turbo": "^2.0.0",

@@ -1,9 +1,12 @@
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { ValidationPipe } from '@nestjs/common';
+import * as fs from 'fs';
+import * as path from 'path';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
   // Enable CORS for frontend apps
   app.enableCors({
@@ -23,6 +26,11 @@ async function bootstrap() {
       transform: true,
     }),
   );
+
+  // Serve uploaded product images at /uploads/<file>
+  const uploadsDir = path.join(process.cwd(), 'uploads');
+  fs.mkdirSync(uploadsDir, { recursive: true });
+  app.useStaticAssets(uploadsDir, { prefix: '/uploads/' });
 
   const port = process.env.PORT || 4000;
   await app.listen(port);
