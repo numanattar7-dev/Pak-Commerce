@@ -1,219 +1,125 @@
-# 🚀 Pak Commerce — Build Plan v2
+# Pak Commerce — Build Plan v2
 
-**Philosophy:** پہلے *exact Shopify* (core commerce engine) → پھر پاکستانی ضروری features اسی کے اوپر add
-**Date:** 31 اکتوبر 2026
-**Approach:** موجودہ codebase (backend ~90%, admin ~35%, storefront ~60%) کو بنیاد بنا کر آگے
-
----
-
-## 🧭 مجموعی نقشہ (Bird's Eye View)
-
-```
-Phase 0: Stabilize                (~1 ہفتہ)    → مضبوط بنیاد
-Phase 1: Shopify Core — Backend   (~4 ہفتے)   → Shopify جیسا API engine
-Phase 2: Shopify Core — Admin     (~4 ہفتے)   → Shopify جیسا merchant dashboard
-Phase 3: Shopify Core — Storefront(~3 ہفتے)   → Shopify جیسا customer-facing store
-Phase 4: پاکستانی Essential Layer (~6 ہفتے)   → COD, wallets, couriers, WhatsApp, Urdu
-Phase 5: Compliance & Scale       (مستقل)      → FBR, multi-location, theme engine, apps
-```
-
-> 🎯 **Milestone (Phase 3 کے بعد):** مکمل Shopify جیسا platform — international-level core
-> 🇵🇰 **Milestone (Phase 4 کے بعد):** "پاکستان کا Shopify" — یعنی اصلی production-ready پراڈکٹ
+**Philosophy:** First build an *exact Shopify* core commerce engine → then add Pakistan-specific essentials on top of it.
+**Date:** October 31, 2026
+**Approach:** Build on the existing codebase (backend ~90%, admin ~35%, storefront ~60%).
 
 ---
 
-# PHASE 0 — Stabilize (سب سے پہلے ضروری کام)
+## Roadmap (Bird's Eye View)
 
-**ہدف:** جو کچھ بن چکا ہے اسے قابلِ اعتماد بنانا۔ نیا feature شروع کرنے سے پہلے یہ لازمی۔
+```
+Phase 0: Stabilize                     (~1 week)  -> solid foundation
+Phase 1: Shopify Core — Backend        (~4 weeks) -> Shopify-grade API engine
+Phase 2: Shopify Core — Admin          (~4 weeks) -> Shopify-grade merchant dashboard
+Phase 3: Shopify Core — Storefront     (~3 weeks) -> Shopify-grade customer store
+Phase 4: Pakistan Essential Layer      (~6 weeks) -> COD, wallets, couriers, WhatsApp, notifications
+Phase 5: Compliance & Scale            (ongoing)  -> FBR, multi-location, theme engine, apps
+```
 
-| کام | تفصیل | کس کی ذمہ داری |
+> Milestone (after Phase 3): a complete Shopify-grade platform — international-level core
+> Milestone (after Phase 4): "Shopify of Pakistan" — i.e., a genuinely production-ready product
+
+---
+
+# PHASE 0 — Stabilize (first priority)
+
+**Goal:** Make everything already built trustworthy. Mandatory before starting new features.
+
+| Task | Detail | Owner |
 |---|---|---|
-| JWT 401 فکس | `DATABASE_URL` runtime پر Prisma تک پہنچے؛ JWT strategy کو DB-free validation بنانا | میں |
-| Git setup | `git init`, پہلا commit، `.env` ignore، branch rules (`main`/`dev`) | میں |
-| Code audit | موجودہ 31 backend files کا review — inconsistencies, dead code, naming | میں |
-| DB cleanup | Neon branches (main/dev)، seed review، indexes چیک | میں |
-| Test بنیاد | auth + products + orders پر smoke tests (NestJS e2e) | میں |
-| Deploy dry-run | Render (backend) + Vercel (frontend) پر staging deploy — free tier | میں |
+| JWT 401 fix | `DATABASE_URL` reaches Prisma at runtime; JWT strategy validates without DB | done |
+| Git setup | `git init`, first commit, `.env` ignored, branch rules (`main`/`dev`) | done |
+| Code audit | Review existing backend files — inconsistencies, dead code, naming | done |
+| DB cleanup | Neon branches (main/dev), seed review, index check | done (single Neon main branch) |
+| Test foundation | Smoke tests for auth + products + orders (+ per-step E2E suites in `scripts/`) | done |
+| Deploy dry-run | Staging deploy on Render (backend) + Vercel (frontend) — free tier | BLOCKED (needs user accounts) |
 
-✅ **قبول کا معیار:** login/token ہر endpoint پر کام کرے؛ کوڈ Git پر محفوظ؛ staging environment زندہ
-
----
-
-# PHASE 1 — Shopify Core: Backend Parity (~4 ہفتے)
-
-**ہدف:** Shopify جتنی گہرائی والا commerce API — پہلے REST (GraphQL Phase 5 میں)
-
-## 1.1 Schema Upgrade (Prisma) — نئے models
-- `Customer` — profiles, tags, addresses, order history
-- `Discount` — codes, %/fixed/free-shipping, usage limits, date ranges
-- `DraftOrder` — merchant-created orders
-- `Location` + `InventoryLevel` — multi-location-ready schema (فی الحال 1 default location)
-- `Fulfillment` / `Refund` / `Return` — مکمل order lifecycle
-- `Webhook` + `WebhookDelivery` — event engine کی بنیاد
-- `StaffUser` + permissions — roles: Owner / Admin / Staff
-- موجودہ `Product/Variant/Order/Tenant` پر Shopify-parity fields کا اضافہ
-
-## 1.2 Products & Catalog
-- 3-option variants (size/color/material — Shopify جیسا)، images per variant
-- Collections: manual + smart rules (tag/price/inventory based)
-- CSV bulk import/export
-- Product status: draft/active
-
-## 1.3 Orders & OMS
-- پورا lifecycle: open → paid/pending → fulfilled → returned/refunded/cancelled
-- Fulfillment tracking (generic carrier fields — پاکستانی couriers Phase 4 میں plug ہوں گے)
-- Refund calculation + inventory restore
-- Draft orders
-- Order timeline (event log — Shopify جیسا audit trail)
-
-## 1.4 Discounts Engine
-- Codes: % off, fixed off, free shipping, minimum amount, first-order-only
-- Usage limits + expiry + customer eligibility
-
-## 1.5 Analytics API
-- Revenue, orders, AOV, conversion rate, top products, sales-over-time
-
-## 1.6 Webhook Engine (BullMQ)
-- Events: `order.created`, `order.fulfilled`, `product.updated`, `inventory.low`
-- Signed payloads + exponential retry
-
-✅ **قبول کا معیار:** products/orders/customers/discounts/analytics — سب core operations REST API پر مکمل
+Acceptance: login/token works on every endpoint; code is committed to Git; staging environment is live.
 
 ---
 
-# PHASE 2 — Shopify Core: Admin Dashboard (~4 ہفتے، Phase 1 کے ساتھ overlap)
+# PHASE 1 — Shopify Core: Backend Parity (~4 weeks)
 
-**ہدف:** Shopify جیسا صاف، تیز، mobile-friendly merchant panel
+**Goal:** A commerce API as deep as Shopify — REST first (GraphQL in Phase 5).
 
-## 2.1 Design System
-- Sidebar: **Home | Orders | Products | Customers | Discounts | Analytics | Settings**
-- Shopify جیسی design language: white cards, status badges (paid/unfulfilled), data-dense tables
+## 1.1 Schema upgrade (Prisma) — new models — DONE
+- `Customer` — profiles, tags, addresses, order history ✔
+- `Discount` — codes, %/fixed/free-shipping, usage limits, date ranges ✔
+- `Location` — multi-location-ready schema (1 default location for now) ✔
+- `Fulfillment` / `Refund` — full order lifecycle ✔
+- `Webhook` + `WebhookDelivery` — event engine foundation ✔ (+ Collections, FBR fields, CodVerification.expiresAt)
 
-## 2.2 Screen-by-Screen
-1. **Home** — KPI cards + sales chart + recent orders + onboarding checklist ("add product → set shipping → go live")
-2. **Orders** — list + status tabs/filters؛ order detail (timeline, fulfill, refund, customer contact)
-3. **Products** — list + bulk actions؛ product editor (variants matrix, image upload, SEO section، bilingual fields کی جگہ — Phase 4 میں active)
-4. **Customers** — list, profile, order history, tags
-5. **Discounts** — builder UI
-6. **Analytics** — line/bar charts + reports
-7. **Settings** — store info, domains, payments (adapter placeholders), generic shipping zones, generic taxes, users/roles, notification templates
+## 1.2 Products & Catalog — DONE (core)
+- Variants (size/color style), images ✔ (upload to `/uploads` + static serving)
+- Collections: manual ✔ (smart rules reserved via `rules` column)
+- CSV bulk import/export ✔ (quote-aware parser, product/variant upsert, error capture)
+- Product status: draft/active — `isActive` field exists ✔
 
-## 2.3 Professional UX
-- Staff login + role permissions (API-level Phase 1 سے، UI-level یہاں)
-- Toasts, empty states, skeleton loading
-- Global search (orders/products/customers — `Ctrl+K`)
+## 1.3 Orders & checkout — DONE
+- Server-verified checkout: server computes prices/totals from DB (client never sets them) ✔
+- Subdomain-scoped public endpoints (no random-tenant fallback) ✔
+- COD verification with OTP (5-min validity, attempts lock, resend) ✔
+- Bank transfer proof upload model ✔
+- Risk score ✔ · order number generation ✔
 
-✅ **قبول کا معیار:** نیا merchant بغیر کسی مدد کے panel استعمال کر سکے
+## 1.4 Discounts engine — DONE
+- PERCENTAGE / FIXED / FREE_SHIPPING, min-order, first-order-only, max-uses with race-safe consume ✔
+- Public validate endpoint + checkout apply ✔ (storefront discount box live)
 
----
+## 1.5 Customers CRM — DONE
+- Full CRUD + auto customer profile at checkout with ordersCount/totalSpent ✔
 
-# PHASE 3 — Shopify Core: Storefront (~3 ہفتے)
+## 1.6 Fulfillments & Refunds — DONE
+- 1-click + partial fulfillment, over-fulfillment guard, deliveredAt stamping ✔
+- Full/partial refunds with restock control (default false), closed-order guard ✔
+- Cancel/RTO always restores stock ✔
 
-**ہدف:** professional، تیز، mobile-first buyer experience — ہلکا JS bundle (< 80KB gzipped)
+## 1.7 Webhooks engine — DONE
+- DB-backed delivery queue + 10s retry worker (no Redis dependency) ✔
+- Events: order.created / order.status_changed / order.fulfilled / order.shipped / order.refunded / webhook.test ✔
+- HMAC-SHA256 signing (`X-Pak-Commerce-Signature`), 5 retries with backoff [30s, 2m, 10m, 30m, 2h], FAILED terminal state ✔
+- Admin CRUD + deliveries log + test-send endpoint ✔
 
-## 3.1 Theme System v1
-- Theme settings: logo, colors, fonts, hero/banners, menus, footer
-- ایک premium default theme + section blocks (hero, featured collection, testimonials, announcement bar)
-- (Full drag-drop builder = Phase 5)
+## 1.8 Analytics — DONE
+- Summary (revenue excl. CANCELLED/RTO, AOV, COD share, status breakdown), daily revenue-series, top-products (product/variant join), status-breakdown ✔
 
-## 3.2 Pages
-- Home, Collection listing/filters, Product page (variants, gallery, quantity), Cart, **one-page checkout**, Order status/lookup, Customer login + order history, Policy/About pages, Contact
-- Search (پہلے SQL/trigram — Meilisearch Phase 5 میں)
+# PHASE 4 (early slice) — Pakistan Essential Layer — SANDBOX DONE
 
-## 3.3 Performance & SEO
-- Next.js ISR/SSR, image optimization (WebP), lazy loading
-- Meta tags, OpenGraph, `sitemap.xml`, `robots.txt`, JSON-LD
-- PWA بنیاد (manifest, offline shell)
-
-✅ **قبول کا معیار:** Lighthouse mobile ≥ 90؛ checkout صرف 3 قدم (cart → address → confirm)
-
----
-
-# PHASE 4 🇵🇰 — پاکستانی Essential Layer (~6 ہفتے)
-
-**ہدف:** وہ features جو Shopify نہیں دیتا — اسی ترتیب سے (کاروباری اہمیت کے مطابق):
-
-## 4.1 COD Operating System (سب سے پہلے — موجودہ کام کو upgrade)
-- موجودہ: OTP (simulated) + basic risk score → **upgrade:**
-- Real SMS gateway (آپ سے credentials — local aggregator)
-- COD flow: OTP verify → risk score → high-risk پر upfront deposit rule (wallet/Raast سے)
-- **Cash Reconciliation Ledger** — courier settlement (AWB → collected → fee → net payout)، short-payment flags
-
-## 4.2 Payment Adapter Layer
-- Interface: `PaymentProvider { authorize, capture, refund, verifyWebhook }`
-- Implementations: **Easypaisa / JazzCash / Raast QR / NayaPay / cards** (PayFast یا Safepay aggregator سے: sandbox → live)
-- Checkout پر prepayment discount rule ("Raast/Easypaisa سے ادائیگی پر بچت") — RTO کم کرنے کے لیے
-
-## 4.3 Courier Adapter Layer
-- Interface: `CourierProvider { createAwb, track, cancel, settlementImport }`
-- Implementations: **TCS / Leopards / PostEx / Trax / CallCourier**
-- Admin میں: 1-click AWB booking, label printing, tracking webhooks, courier performance report
-
-## 4.4 Urdu / Roman Urdu
-- Storefront اردو RTL (Noto Nastaliq font)، UR/EN toggle
-- Roman Urdu fuzzy search (kurta/koorta/kurti — spelling variants match)
-- Admin interface کی ترجمانی (UR/EN)
-
-## 4.5 WhatsApp Commerce
-- WhatsApp Business Cloud API (آپ سے token)
-- Templates: order confirm / dispatch / out-for-delivery / delivered
-- Abandoned cart recovery (30 منٹ بعد)
-- Click-to-WhatsApp order capture
-
-✅ **قبول کا معیار:** کسٹمر موبائل سے COD پر آرڈر کرے؛ merchant ایک کلک میں AWB بنائے؛ پیسوں کا حساب self-reconcile ہو
-
----
-
-# PHASE 5 — Compliance & Scale (مستقل جاری)
-
-- **FBR Digital Invoicing** (S.R.O. 709): IRN generation + invoice QR (آپ سے intermediary registration)
-- Provincial taxes (PRA/SRB/KPRA) module
-- Multi-location inventory (Phase 1 schema پر UI + APIs)
-- Theme engine v2 (drag-drop sections editor — Shopify online store editor جیسا)
-- Storefront GraphQL API + headless starter kit
-- App/Plugin ecosystem کی بنیاد (OAuth apps)
-- React Native merchant app (اختیاری)
-- NADRA e-KYC onboarding (اختیاری — unbanked merchants کے لیے)
-
----
-
-## 📋 ہر Phase میں آپ سے کیا چاہیے ہوگا
-
-| Phase | آپ کی طرف سے |
+| Feature | Status |
 |---|---|
-| 0 | کچھ نہیں — میں خود کر لوں گا |
-| 1–3 | کچھ نہیں (شاید design feedback) |
-| 4.1 | SMS gateway account/credentials |
-| 4.2 | PayFast/Safepay + Easypaisa/JazzCash merchant onboarding (پہلے sandbox) |
-| 4.3 | Courier company accounts (TCS/PostEx/Leopards میں سے کوئی ایک بھی کافی) |
-| 4.5 | Meta developer app + WhatsApp Business API verification |
-| 5 | FBR intermediary registration |
-
-> 💡 **نوٹ:** Phase 4 میں ہر integration پہلے **sandbox/mock mode** میں بنے گا۔ آپ کے credentials آتے ہی ایک config switch سے live۔ کوئی کام رک نہیں گا۔
+| COD OTP verification (English SMS + WhatsApp, Twilio SIMULATION when unconfigured) | done (mock) |
+| OTP resend + expiry + attempts lock | done |
+| Courier adapters (TCS / Leopards / PostEx / Trax) — rate card, booking, tracking timeline | done (mock, deterministic) |
+| FBR POS invoice — sandbox issue (idempotent) + invoice list | done (mock) |
+| English WhatsApp/SMS order-status templates | done |
+| Real courier APIs / real Twilio credentials / FBR production API | pending (user credentials) |
+| Raast / JazzCash / EasyPaisa live payment gateways | pending (Phase 4 full) |
 
 ---
 
-## ⚠️ Rules (خطرات پہلے سے دکھے گئے)
+# PHASE 2 — Shopify Core: Admin (~4 weeks) — NEXT
 
-| خطرہ | حل |
-|---|---|
-| Scope creep (سب ایک ساتھ) | سخت phase discipline — ایک phase مکمل، پھر اگلا |
-| "Shopify exact" کا وسیع مطلب | اوپر کی list = حتمی scope؛ باہر کا feature پہلے پوچھ کر |
-| Couriers/payments کے accounts دیر سے ملیں | mock mode سے کام نہیں رکے گا |
-| کوڈ خطرے میں | Phase 0 میں فوری Git setup |
-| Cloud لاگت | اب Neon free + Render/Vercel free tier؛ scale کا فیصلہ بعد میں |
+- Home: analytics widgets (endpoints ready)
+- Orders: list, detail, fulfill, refund, book shipment, FBR invoice, resend OTP
+- Products: list, create with variants + images (upload endpoint ready), CSV import/export, collections editor
+- Discounts editor + usage stats
+- Customers list/detail
+- Webhooks manager (endpoints ready)
+- Settings: tenant profile, shipping rules by city
 
----
+# PHASE 3 — Shopify Core: Storefront (~3 weeks) — partially started
 
-## 🗓️ پہلا اسبوع (Phase 0) — مثال کے طور پر
+- Home + catalog (done in prototype form), product detail page, cart, checkout (with discount box — done), order status page + public tracking (`GET /orders/track/:orderNumber/:phone` ready)
+- Multi-page Next.js routes instead of single-page prototype
+- Tenant theming (logo/banner colors from Tenant fields)
 
-1. JWT فکس + سب endpoints ٹیسٹ
-2. `git init` + پہلا commit
-3. Prisma schema پر Shopify-parity models کا design (Phase 1 کا blueprint)
-4. Staging deploy (Render + Vercel free)
+# PHASE 4 — Pakistan Essential Layer (full)
 
-**کل اندازہ:** Phase 0 → 4 = تقریباً **18 ہفتے**؛ اس کے بعد Phase 5 جاری۔ موجودہ کوڈ re-use ہوگا — کچھ ضائع نہیں ہوگا۔
+- Live integrations: courier APIs (TCS/Leopards/PostEx/Trax), Twilio/WhatsApp Business (or local gateways e.g. Jazz Business SMS), Raast/JazzCash/EasyPaisa gateways
+- FBR production POS integration
+- UDNP/COD risk scoring expansions, settlements report
 
----
+# PHASE 5 — Compliance & Scale
 
-*یہ plan زندہ دستاویز ہے — آپ کے فیصلوں کے ساتھ بدل سکتا ہے۔ شروع کرنے سے پہلے آپ کی اجازت چاہیے۔*
+- GraphQL API, multi-location fulfillment, theme engine, app/store extensions, usage billing per tenant
