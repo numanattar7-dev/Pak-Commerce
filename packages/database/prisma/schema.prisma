@@ -39,6 +39,8 @@ model Tenant {
   webhooks      Webhook[]
   locations     Location[]
   collections   Collection[]
+  payments      Payment[]
+  integrationSettings IntegrationSetting[]
 
   @@map("tenants")
 }
@@ -252,6 +254,7 @@ model Order {
   refunds         Refund[]
   codVerification CodVerification?
   bankProof       BankTransferProof?
+  payments        Payment[]
 
   @@unique([tenantId, orderNumber])
   @@index([tenantId, customerPhone])
@@ -466,4 +469,57 @@ model Location {
   createdAt DateTime @default(now())
 
   @@map("locations")
+}
+
+// ----------------------------------------------------
+// 11. Payments — gateway transaction ledger
+// ----------------------------------------------------
+
+enum PaymentTxStatus {
+  INITIATED      // wallet flow started, hosted checkout pending
+  AWAITING_PROOF // manual methods (IBFT / RAAST) — customer must submit proof
+  SUCCEEDED      // gateway confirmed or merchant approved proof
+  FAILED
+}
+
+model Payment {
+  id           String          @id @default(uuid())
+  tenantId     String
+  tenant       Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  orderId      String
+  order        Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  method       PaymentMethod   // wallet or manual method (COD never creates a Payment)
+  status       PaymentTxStatus @default(INITIATED)
+  amount       Float           // PKR, mirrors order.totalAmount at initiation
+  gatewayTxRef String          @unique // our reference sent to the gateway
+  providerRef  String?         // gateway auth code / bank transaction id
+  redirectUrl  String?         // hosted checkout URL (wallet gateways)
+  instructions String?         // free-text payment instructions (IBFT / RAAST)
+  markedPaidAt DateTime?
+  errorMessage String?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  @@index([orderId])
+  @@index([tenantId, status])
+  @@map("payments")
+}
+
+// ----------------------------------------------------
+// 12. Integrations — per-tenant credentials for external services
+// (Phase 4: gateways, couriers, SMS providers, FBR; secrets write-only)
+// ----------------------------------------------------
+
+model IntegrationSetting {
+  id         String   @id @default(uuid())
+  tenantId   String
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  provider   String   // JAZZCASH | EASYPAISA | TCS | LEOPARDS | POSTEX | TRAX | TWILIO | FBR | IBFT | RAAST
+  configJson String   // JSON credentials blob (masked in API responses)
+  sandbox    Boolean  @default(true)
+  updatedAt  DateTime @updatedAt
+  createdAt  DateTime @default(now())
+
+  @@unique([tenantId, provider])
+  @@map("integration_settings")
 }
