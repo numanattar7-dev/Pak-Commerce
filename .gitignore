@@ -34,3 +34,5 @@ desktop.ini
 .idea/
 
 apps/api-backend/uploads/
+.vercel
+.env*

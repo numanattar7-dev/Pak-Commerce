@@ -117,6 +117,28 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       .catch(() => setCustomization(DEFAULT_CUSTOMIZATION));
   }, []);
 
+  // LIVE PREVIEW (theme editor): the admin panel pushes its draft config here
+  // via postMessage while the merchant types. Origin-checked for safety.
+  useEffect(() => {
+    const onMessage = (e: MessageEvent) => {
+      try {
+        if (!e.data || e.data.type !== 'pk-preview-config') return;
+        if (e.origin === window.location.origin) return; // never accept from the storefront's own origin
+        const adminHost = new URL(e.origin).hostname;
+        const sameMachine = adminHost === 'localhost' || adminHost === '127.0.0.1';
+        const trustedDomain = /(^|\.)vercel\.app$/.test(adminHost) || /pakcommerce\.pk$/.test(adminHost);
+        if (!sameMachine && !trustedDomain) return;
+        if (e.data.config && typeof e.data.config === 'object') {
+          setCustomization(mergeConfig(DEFAULT_CUSTOMIZATION, e.data.config));
+        }
+      } catch {
+        /* ignore malformed messages */
+      }
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, []);
+
   useEffect(() => {
     load();
   }, [load]);
