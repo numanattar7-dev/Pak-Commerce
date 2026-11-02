@@ -88,6 +88,8 @@ Acceptance: login/token works on every endpoint; code is committed to Git; stagi
 
 | Feature | Status |
 |---|---|
+| **Staging deploy readiness — DEPLOY.md, render.yaml (Neon + monorepo), per-app Vercel configs, NEXT_PUBLIC_API_BASE / CORS env support, production builds verified** | **done (awaiting user's Render/Vercel accounts to execute)** |
+|---|---|
 | COD OTP verification (English SMS + WhatsApp, Twilio SIMULATION when unconfigured) | done (mock) |
 | OTP resend + expiry + attempts lock | done |
 | Courier adapters (TCS / Leopards / PostEx / Trax) — rate card, booking, tracking timeline | done (mock, deterministic) |
