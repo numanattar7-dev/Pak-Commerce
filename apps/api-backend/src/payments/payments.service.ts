@@ -75,13 +75,28 @@ export class PaymentsService {
       if (existing) {
         const wasSimulated = (existing.redirectUrl || '').includes(SIM_ROUTE);
         if (simulateWallet === wasSimulated) {
+          let redirectUrl = existing.redirectUrl;
+          if (simulateWallet) {
+            // Rebuild the sandbox checkout URL so a changed STOREFRONT_URL
+            // self-heals stale attempts (e.g. created before env vars were set)
+            const fresh = `${this.storefrontUrl()}/payment/${existing.gatewayTxRef}?order=${encodeURIComponent(
+              order.orderNumber,
+            )}&phone=${encodeURIComponent(order.customerPhone)}`;
+            if (fresh !== redirectUrl) {
+              await this.prisma.payment.update({
+                where: { id: existing.id },
+                data: { redirectUrl: fresh },
+              });
+              redirectUrl = fresh;
+            }
+          }
           return {
             paymentId: existing.id,
             gatewayTxRef: existing.gatewayTxRef,
             method: existing.method,
             status: existing.status,
             amount: existing.amount,
-            redirectUrl: existing.redirectUrl,
+            redirectUrl,
             instructions: null,
             simulation: simulateWallet,
           };
