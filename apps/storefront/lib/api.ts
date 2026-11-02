@@ -206,6 +206,65 @@ export function resendOtpPublic(body: { orderNumber: string; phone: string }) {
 }
 
 // ---------------------------------------------------------------------------
+// Payments (public)
+// ---------------------------------------------------------------------------
+
+export type PaymentInitiation = {
+  paymentId: string;
+  gatewayTxRef: string;
+  method: string;
+  status: string;
+  amount: number;
+  redirectUrl?: string | null;
+  instructions?: string | null;
+  simulation?: boolean;
+};
+
+/** Start or resume payment; resolves to a redirect (wallet) or instructions (manual). */
+export function initiatePayment(orderNumber: string, phone: string) {
+  return request<PaymentInitiation>('/payments/public/initiate', {
+    method: 'POST',
+    body: JSON.stringify({ subdomain: SUBDOMAIN, orderNumber, phone }),
+  });
+}
+
+/** Sandbox-only simulation of the hosted checkout outcome. */
+export function simulatePayment(body: {
+  gatewayTxRef: string;
+  orderNumber: string;
+  phone: string;
+  outcome?: 'SUCCESS' | 'FAILED';
+}) {
+  return request<{ gatewayTxRef: string; method: string; status: string; amount: number }>(
+    `/payments/public/simulate/${encodeURIComponent(body.gatewayTxRef)}`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        subdomain: SUBDOMAIN,
+        orderNumber: body.orderNumber,
+        phone: body.phone,
+        outcome: body.outcome,
+      }),
+    },
+  );
+}
+
+/** Submit bank-transfer proof for an IBFT/RAAST payment. */
+export function submitBankProof(body: {
+  orderNumber: string;
+  phone: string;
+  gatewayTxRef: string;
+  bankName: string;
+  transactionRef: string;
+  receiptImageUrl?: string;
+}) {
+  return request<{ ok: boolean; message: string; status: string }>('/payments/public/bank-proof', {
+    method: 'POST',
+    body: JSON.stringify({ subdomain: SUBDOMAIN, ...body }),
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 

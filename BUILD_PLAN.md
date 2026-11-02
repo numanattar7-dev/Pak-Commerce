@@ -92,9 +92,14 @@ Acceptance: login/token works on every endpoint; code is committed to Git; stagi
 | OTP resend + expiry + attempts lock | done |
 | Courier adapters (TCS / Leopards / PostEx / Trax) — rate card, booking, tracking timeline | done (mock, deterministic) |
 | FBR POS invoice — sandbox issue (idempotent) + invoice list | done (mock) |
-| English WhatsApp/SMS order-status templates | done |
+| English WhatsApp/SMS notification templates | done |
+| **Payments v2 — transaction ledger (`Payment` model), wallet hosted-checkout flow** | **done (sandbox simulation, no credentials needed)** |
+| **IBFT / RAAST — payment instructions + customer proof submission + admin approve/reject → order PAID** | **done** |
+| **Integrations settings — per-tenant credentials for ALL providers (gateways/couriers/SMS/FBR), write-only masked, sandbox toggle** | **done** |
+| **Sandbox gateway simulation auto-disables the moment real credentials are configured (403 on simulate)** | **done** |
+| Webhooks `payment.succeeded` / `payment.failed` | **done** |
+| Real JazzCash/Easypaisa hosted checkout, RAAST API | pending (user merchant credentials — adapter code live in `requestJazzCash`/`requestEasypaisa`, verified building credential-exact redirects) |
 | Real courier APIs / real Twilio credentials / FBR production API | pending (user credentials) |
-| Raast / JazzCash / EasyPaisa live payment gateways | pending (Phase 4 full) |
 
 ---
 

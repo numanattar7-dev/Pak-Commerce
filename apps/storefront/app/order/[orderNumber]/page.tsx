@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
 import {
   CheckCircle2,
+  CreditCard,
+  Landmark,
   Loader2,
   Package,
   RefreshCw,
@@ -15,9 +17,12 @@ import {
 } from 'lucide-react';
 import { useCart, getLastOrder } from '@/lib/cart';
 import {
+  PaymentInitiation,
   TrackedOrder,
   formatPKR,
+  initiatePayment,
   resendOtpPublic,
+  submitBankProof,
   trackOrder,
   verifyOtpPublic,
 } from '@/lib/api';
@@ -291,6 +296,11 @@ function OrderStatusInner() {
         </div>
       )}
 
+      {/* online payment panel */}
+      {order.paymentMethod !== 'COD' && (
+        <PaymentPanel order={order} phone={phone} />
+      )}
+
       {/* shipments */}
       {(order.fulfillments?.length ?? 0) > 0 && (
         <div className="bg-white rounded-2xl border border-slate-200 p-5 mb-6">
@@ -490,6 +500,186 @@ function MissingOrder({
         >
           Continue shopping →
         </Link>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Payment panel — wallet checkout redirect / bank-transfer instructions + proof
+// ---------------------------------------------------------------------------
+
+function PaymentPanel({
+  order,
+  phone,
+}: {
+  order: TrackedOrder;
+  phone: string;
+}) {
+  const wallet =
+    order.paymentMethod === 'JAZZCASH' || order.paymentMethod === 'EASYPAISA';
+  const gatewayLabel =
+    order.paymentMethod === 'JAZZCASH'
+      ? 'JazzCash'
+      : order.paymentMethod === 'EASYPAISA'
+        ? 'Easypaisa'
+        : order.paymentMethod;
+
+  const [init, setInit] = useState<PaymentInitiation | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [doneMsg, setDoneMsg] = useState<string | null>(null);
+
+  // Bank-transfer proof form
+  const [bankName, setBankName] = useState('');
+  const [txRef, setTxRef] = useState('');
+  const [receiptUrl, setReceiptUrl] = useState('');
+
+  const start = useCallback(async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      const res = await initiatePayment(order.orderNumber, phone);
+      setInit(res);
+      if (res.redirectUrl && wallet) {
+        window.location.href = res.redirectUrl;
+      }
+    } catch (e: any) {
+      setErr(e?.message || 'Could not start payment');
+    } finally {
+      setBusy(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [order.orderNumber, phone, wallet]);
+
+  // IBFT/RAAST — load instructions automatically once
+  useEffect(() => {
+    if (!wallet && order.paymentStatus !== 'PAID') {
+      void start();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [order.orderNumber]);
+
+  const submitProof = async () => {
+    if (!init) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const res = await submitBankProof({
+        orderNumber: order.orderNumber,
+        phone,
+        gatewayTxRef: init.gatewayTxRef,
+        bankName,
+        transactionRef: txRef,
+        receiptImageUrl: receiptUrl || undefined,
+      });
+      setDoneMsg(res.message);
+    } catch (e: any) {
+      setErr(e?.message || 'Could not submit proof');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Paid state
+  if (order.paymentStatus === 'PAID') {
+    return (
+      <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
+        <p className="flex items-center gap-2 text-sm font-bold text-emerald-800">
+          <ShieldCheck className="w-5 h-5" /> Payment of {formatPKR(order.totalAmount)} received via{' '}
+          {gatewayLabel}.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-2xl border border-blue-200 bg-blue-50/70 p-5">
+      <h2 className="text-sm font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
+        {wallet ? (
+          <CreditCard className="w-4 h-4 text-blue-600" />
+        ) : (
+          <Landmark className="w-4 h-4 text-blue-600" />
+        )}
+        Pay {formatPKR(order.totalAmount)} — {gatewayLabel}
+      </h2>
+
+      {/* wallet flow */}
+      {wallet && (
+        <>
+          <p className="text-xs text-blue-800 mt-1.5">
+            Continue to the secured {gatewayLabel} checkout to pay for this order now.
+          </p>
+          {init?.simulation && (
+            <p className="text-[11px] text-amber-700 mt-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2">
+              Sandbox mode: you&apos;ll see a simulated checkout page — no real charge happens until
+              live {gatewayLabel} credentials are configured.
+            </p>
+          )}
+          <button
+            onClick={start}
+            disabled={busy}
+            className="mt-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-black px-6 py-3 rounded-xl transition flex items-center gap-2"
+          >
+            {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+            {init ? 'Resume payment' : 'Pay now'}
+          </button>
+        </>
+      )}
+
+      {/* manual flow — instructions + proof form */}
+      {!wallet && (
+        <>
+          {init?.instructions && (
+            <pre className="mt-3 whitespace-pre-wrap text-xs text-slate-700 bg-white border border-slate-200 rounded-xl p-3.5 font-sans leading-relaxed">
+              {init.instructions}
+            </pre>
+          )}
+          {init?.gatewayTxRef && (
+            <p className="text-[10px] text-slate-400 mt-2">
+              Payment reference: <span className="font-mono">{init.gatewayTxRef}</span>
+            </p>
+          )}
+          <div className="grid sm:grid-cols-2 gap-2.5 mt-3">
+            <input
+              value={bankName}
+              onChange={(e) => setBankName(e.target.value)}
+              placeholder="Your bank (e.g. Meezan Bank)"
+              className="px-3.5 py-2.5 text-sm rounded-xl border border-slate-200 bg-white outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500"
+            />
+            <input
+              value={txRef}
+              onChange={(e) => setTxRef(e.target.value)}
+              placeholder="Transaction reference / DIRS"
+              className="px-3.5 py-2.5 text-sm rounded-xl border border-slate-200 bg-white outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500"
+            />
+            <input
+              value={receiptUrl}
+              onChange={(e) => setReceiptUrl(e.target.value)}
+              placeholder="Screenshot URL (optional)"
+              className="px-3.5 py-2.5 text-sm rounded-xl border border-slate-200 bg-white outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 sm:col-span-2"
+            />
+          </div>
+          <button
+            onClick={submitProof}
+            disabled={busy || !bankName.trim() || !txRef.trim()}
+            className="mt-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white text-xs font-black px-6 py-3 rounded-xl transition flex items-center gap-2"
+          >
+            {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+            Submit payment proof
+          </button>
+        </>
+      )}
+
+      {doneMsg && (
+        <p className="text-xs font-bold text-emerald-700 mt-2.5 flex items-center gap-1.5">
+          <CheckCircle2 className="w-3.5 h-3.5" /> {doneMsg}
+        </p>
+      )}
+      {err && (
+        <p className="text-xs font-bold text-red-600 mt-2.5 flex items-center gap-1.5">
+          <XCircle className="w-3.5 h-3.5" /> {err}
+        </p>
       )}
     </div>
   );

@@ -9,6 +9,7 @@ import {
   Folder,
   Tag,
   Users,
+  CreditCard,
   Settings,
   Webhook,
   Store,
@@ -20,6 +21,7 @@ import { getToken, clearToken, getCurrentUser, getApiBase } from '@/lib/api';
 const NAV = [
   { href: '/', label: 'Overview', icon: LayoutDashboard },
   { href: '/orders', label: 'Orders', icon: ShoppingBag },
+  { href: '/payments', label: 'Payments', icon: CreditCard },
   { href: '/products', label: 'Products', icon: Package },
   { href: '/collections', label: 'Collections', icon: Folder },
   { href: '/discounts', label: 'Discounts', icon: Tag },

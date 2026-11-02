@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { RefreshCw, Plus, Trash2, Save, Building2 } from 'lucide-react';
+import { RefreshCw, Plus, Trash2, Save, Building2, KeyRound, Plug } from 'lucide-react';
 import AppShell from '@/components/AppShell';
 import { Card, Spinner, Empty, btnGhost, btnPrimary, btnDanger, btnSm, input, label } from '@/components/ui';
 import { api, formatPKR, formatDate } from '@/lib/api';
@@ -27,6 +27,53 @@ type ShippingRule = {
   createdAt: string;
 };
 
+type Integration = {
+  provider: string;
+  configured: boolean;
+  sandbox: boolean;
+  fields: string[];
+  updatedAt: string | null;
+};
+
+/** Credential fields the admin form shows per provider (values are write-only). */
+const PROVIDER_FIELDS: Record<string, { key: string; label: string }[]> = {
+  JAZZCASH: [
+    { key: 'merchantId', label: 'Merchant ID' },
+    { key: 'password', label: 'Password' },
+    { key: 'integritySalt', label: 'Integrity salt' },
+    { key: 'returnUrl', label: 'Return URL (optional)' },
+  ],
+  EASYPAISA: [
+    { key: 'storeId', label: 'Store ID' },
+    { key: 'merchantId', label: 'Merchant ID' },
+    { key: 'password', label: 'Password' },
+  ],
+  IBFT: [
+    { key: 'bankName', label: 'Bank name' },
+    { key: 'accountTitle', label: 'Account title' },
+    { key: 'accountNumber', label: 'Account number' },
+    { key: 'iban', label: 'IBAN (optional)' },
+  ],
+  RAAST: [
+    { key: 'bankName', label: 'Bank name' },
+    { key: 'accountTitle', label: 'Account title' },
+    { key: 'accountNumber', label: 'Raast bank account' },
+  ],
+  TCS: [{ key: 'apiKey', label: 'API key' }],
+  LEOPARDS: [{ key: 'apiKey', label: 'API key' }],
+  POSTEX: [{ key: 'apiKey', label: 'API key' }],
+  TRAX: [{ key: 'apiKey', label: 'API key' }],
+  TWILIO: [
+    { key: 'accountSid', label: 'Account SID' },
+    { key: 'authToken', label: 'Auth token' },
+    { key: 'fromNumber', label: 'Sender number' },
+  ],
+  FBR: [
+    { key: 'bearerToken', label: 'Bearer token' },
+    { key: 'posId', label: 'POS ID (optional)' },
+  ],
+};
+
 export default function SettingsPage() {
   const [tenant, setTenant] = useState<Tenant | null>(null);
   const [rules, setRules] = useState<ShippingRule[]>([]);
@@ -40,12 +87,23 @@ export default function SettingsPage() {
   const [rate, setRate] = useState('');
   const [freeAbove, setFreeAbove] = useState('');
 
+  // integrations
+  const [integrations, setIntegrations] = useState<Integration[]>([]);
+  const [activeProvider, setActiveProvider] = useState<string | null>(null);
+  const [draft, setDraft] = useState<Record<string, string>>({});
+  const [liveMode, setLiveMode] = useState(false);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [t, r] = await Promise.all([api<Tenant>('/tenants/me'), api<ShippingRule[] | any>('/shipping-rules')]);
+      const [t, r, ints] = await Promise.all([
+        api<Tenant>('/tenants/me'),
+        api<ShippingRule[] | any>('/shipping-rules'),
+        api<Integration[]>('/integrations'),
+      ]);
       setTenant(t);
       setRules(Array.isArray(r) ? r : r?.data || []);
+      setIntegrations(Array.isArray(ints) ? ints : []);
       setError(null);
     } catch (e: any) {
       setError(e?.message || 'Failed to load settings');
@@ -98,6 +156,34 @@ export default function SettingsPage() {
       await load();
     } catch (e: any) {
       setError(e?.message || 'Delete failed');
+    }
+  };
+
+  const openIntegration = (it: Integration) => {
+    if (activeProvider === it.provider) {
+      setActiveProvider(null);
+      return;
+    }
+    setActiveProvider(it.provider);
+    setDraft({});
+    setLiveMode(it.sandbox === false);
+  };
+
+  const saveIntegration = async (it: Integration) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api(`/integrations/${it.provider}`, {
+        method: 'PUT',
+        body: { config: draft, sandbox: !liveMode },
+      });
+      setNotice(`${it.provider} credentials saved — values are stored write-only`);
+      setActiveProvider(null);
+      await load();
+    } catch (e: any) {
+      setError(e?.detail || e?.message || 'Save failed');
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -265,6 +351,91 @@ export default function SettingsPage() {
           <p className="text-[10px] text-slate-400 mt-3">
             Tip: press Enter inside a rate field, then click away (blur) to save.
           </p>
+        </Card>
+
+        <Card
+          title="Integrations"
+          subtitle="Credentials for payment gateways, couriers, SMS and FBR — masked and write-only"
+        >
+          <p className="text-xs text-slate-500 mb-4 flex items-start gap-2">
+            <KeyRound className="w-3.5 h-3.5 mt-0.5 text-slate-400 shrink-0" />
+            <span>
+              Saved values are never returned by the API. Leave a field blank to keep its stored value.
+              Wallet gateways stay in sandbox simulation until real credentials exist and sandbox is off.
+            </span>
+          </p>
+          <div className="space-y-2">
+            {integrations.map((it) => (
+              <div key={it.provider} className="border border-slate-100 rounded-lg overflow-hidden">
+                <button
+                  onClick={() => openIntegration(it)}
+                  className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-slate-50 transition"
+                >
+                  <div className="flex items-center gap-3">
+                    <Plug className={`w-4 h-4 ${it.configured ? 'text-emerald-600' : 'text-slate-400'}`} />
+                    <div>
+                      <p className="text-sm font-bold text-slate-800">{it.provider}</p>
+                      <p className="text-[10px] text-slate-400">
+                        {it.configured
+                          ? `${it.fields.length} field(s) saved · updated ${formatDate(it.updatedAt)}`
+                          : 'Not configured'}
+                      </p>
+                    </div>
+                  </div>
+                  <span
+                    className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                      it.sandbox ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'
+                    }`}
+                  >
+                    {it.sandbox ? 'SANDBOX' : 'LIVE'}
+                  </span>
+                </button>
+                {activeProvider === it.provider && (
+                  <div className="px-4 pb-4 pt-3 bg-slate-50/60 border-t border-slate-100">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                      {(PROVIDER_FIELDS[it.provider] || []).map((f) => (
+                        <div key={f.key}>
+                          <p className={label}>{f.label}</p>
+                          <input
+                            type={/password|salt|token|auth/i.test(f.key) ? 'password' : 'text'}
+                            value={draft[f.key] ?? ''}
+                            onChange={(e) => setDraft({ ...draft, [f.key]: e.target.value })}
+                            placeholder={
+                              it.fields.includes(f.key) ? 'saved — leave blank to keep' : 'not set'
+                            }
+                            className={input}
+                          />
+                        </div>
+                      ))}
+                      {it.fields.length > 0 &&
+                        it.fields.some((k) => !(PROVIDER_FIELDS[it.provider] || []).some((f) => f.key === k)) && (
+                          <p className="text-[10px] text-slate-400 md:col-span-2">
+                            Also stored: {it.fields.filter((k) => !(PROVIDER_FIELDS[it.provider] || []).some((f) => f.key === k)).join(', ')}
+                          </p>
+                        )}
+                    </div>
+                    <label className="flex items-center gap-2 mt-3 text-xs font-semibold text-slate-600 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={liveMode}
+                        onChange={(e) => setLiveMode(e.target.checked)}
+                        className="w-4 h-4 accent-emerald-600"
+                      />
+                      Process LIVE transactions (turns sandbox simulation off)
+                    </label>
+                    <div className="mt-3 flex items-center gap-2">
+                      <button onClick={() => saveIntegration(it)} disabled={busy} className={btnPrimary}>
+                        <Save className="w-4 h-4" /> Save credentials
+                      </button>
+                      <button onClick={() => setActiveProvider(null)} className={`${btnGhost} ${btnSm}`}>
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
         </Card>
       </div>
     </AppShell>
