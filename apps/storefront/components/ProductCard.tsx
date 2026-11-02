@@ -68,7 +68,7 @@ export default function ProductCard({ product }: { product: StoreProduct }) {
         </Link>
 
         <div className="p-5">
-          <h3 className="font-bold text-slate-900 text-base group-hover:text-emerald-700 transition">
+          <h3 className="font-bold text-slate-900 text-base group-hover:text-[var(--pk-primary-text)] transition">
             <Link href={`/products/${product.slug}`}>{product.title}</Link>
           </h3>
           <p className="text-xs text-slate-500 line-clamp-2 mt-1.5 leading-relaxed">
@@ -93,7 +93,7 @@ export default function ProductCard({ product }: { product: StoreProduct }) {
         </div>
 
         {added ? (
-          <span className="bg-emerald-100 text-emerald-700 text-xs font-bold px-4 py-2.5 rounded-xl flex items-center gap-1.5">
+          <span className="bg-[var(--pk-primary-soft)] text-[var(--pk-primary-text)] text-xs font-bold px-4 py-2.5 rounded-xl flex items-center gap-1.5">
             <Check className="w-3.5 h-3.5" /> Added
           </span>
         ) : !inStock ? (
@@ -103,7 +103,7 @@ export default function ProductCard({ product }: { product: StoreProduct }) {
         ) : singleVariant ? (
           <button
             onClick={handleAdd}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow-sm transition flex items-center gap-1.5"
+            className="hover:bg-[var(--pk-primary-dark)] text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow-sm transition flex items-center gap-1.5"
           >
             <ShoppingBag className="w-3.5 h-3.5" />
             <span>Add</span>

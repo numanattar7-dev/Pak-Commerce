@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -14,6 +14,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { useCart, rememberLastOrder } from '@/lib/cart';
+import { useStore } from '@/lib/store';
 import { PAKISTANI_CITIES } from '@/lib/cities';
 import {
   ApiError,
@@ -41,6 +42,12 @@ type AppliedDiscount = { code: string; amount: number; label: string };
 export default function CheckoutPage() {
   const router = useRouter();
   const { items, subtotal, count, clear, hydrated } = useCart();
+  const { customization: cfg } = useStore();
+
+  // merchant-enabled payment methods only (Customize Store → Payments)
+  const enabledMethods = PAYMENT_OPTIONS.filter(
+    (o) => cfg.payments[o.id as keyof typeof cfg.payments] !== false,
+  );
 
   // form state
   const [customerName, setCustomerName] = useState('');
@@ -51,6 +58,14 @@ export default function CheckoutPage() {
   const [notes, setNotes] = useState('');
   const [paymentMethod, setPaymentMethod] =
     useState<PlaceOrderPayload['paymentMethod']>('COD');
+
+  // keep the selected method valid when the merchant disables it
+  useEffect(() => {
+    if (!enabledMethods.some((o) => o.id === paymentMethod) && enabledMethods.length) {
+      setPaymentMethod(enabledMethods[0].id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cfg.payments]);
 
   // discount state
   const [discountInput, setDiscountInput] = useState('');
@@ -68,7 +83,7 @@ export default function CheckoutPage() {
         <p className="text-sm text-slate-500 mt-2">Your cart is empty.</p>
         <Link
           href="/products"
-          className="inline-flex mt-6 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm px-6 py-3 rounded-xl transition"
+          className="inline-flex mt-6 bg-[var(--pk-primary)] hover:bg-[var(--pk-primary-dark)] text-white font-bold text-sm px-6 py-3 rounded-xl transition"
         >
           Browse Products
         </Link>
@@ -180,7 +195,7 @@ export default function CheckoutPage() {
                   value={customerName}
                   onChange={(e) => setCustomerName(e.target.value)}
                   placeholder="e.g. Ahmed Raza"
-                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-slate-300 outline-none focus:ring-2 focus:ring-emerald-100 focus:border-emerald-500"
+                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-slate-300 outline-none focus:ring-2 focus:ring-[var(--pk-primary-soft)] focus:border-[var(--pk-primary)]"
                 />
               </div>
               <div>
@@ -196,7 +211,7 @@ export default function CheckoutPage() {
                     setCustomerPhone(e.target.value.replace(/\D/g, '').slice(0, 11))
                   }
                   placeholder="03001234567"
-                  className={`w-full px-3.5 py-2.5 text-sm rounded-xl border outline-none focus:ring-2 focus:ring-emerald-100 focus:border-emerald-500 ${
+                  className={`w-full px-3.5 py-2.5 text-sm rounded-xl border outline-none focus:ring-2 focus:ring-[var(--pk-primary-soft)] focus:border-[var(--pk-primary)] ${
                     customerPhone && !phoneValid ? 'border-red-400' : 'border-slate-300'
                   }`}
                 />
@@ -215,7 +230,7 @@ export default function CheckoutPage() {
                   value={customerEmail}
                   onChange={(e) => setCustomerEmail(e.target.value)}
                   placeholder="you@example.com"
-                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-slate-300 outline-none focus:ring-2 focus:ring-emerald-100 focus:border-emerald-500"
+                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-slate-300 outline-none focus:ring-2 focus:ring-[var(--pk-primary-soft)] focus:border-[var(--pk-primary)]"
                 />
               </div>
             </div>
@@ -232,7 +247,7 @@ export default function CheckoutPage() {
                 <select
                   value={shippingCity}
                   onChange={(e) => setShippingCity(e.target.value)}
-                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-slate-300 bg-white outline-none focus:ring-2 focus:ring-emerald-100 focus:border-emerald-500"
+                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-slate-300 bg-white outline-none focus:ring-2 focus:ring-[var(--pk-primary-soft)] focus:border-[var(--pk-primary)]"
                 >
                   {PAKISTANI_CITIES.map((c) => (
                     <option key={c} value={c}>
@@ -251,20 +266,22 @@ export default function CheckoutPage() {
                   value={shippingAddress}
                   onChange={(e) => setShippingAddress(e.target.value)}
                   placeholder="House / Street / Area — include a landmark for the courier"
-                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-slate-300 outline-none focus:ring-2 focus:ring-emerald-100 focus:border-emerald-500 resize-none"
+                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-slate-300 outline-none focus:ring-2 focus:ring-[var(--pk-primary-soft)] focus:border-[var(--pk-primary)] resize-none"
                 />
               </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Order Notes (Optional)
-                </label>
-                <input
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="e.g. Call before delivery"
-                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-slate-300 outline-none focus:ring-2 focus:ring-emerald-100 focus:border-emerald-500"
-                />
-              </div>
+              {cfg.checkout.allowNotes !== false && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Order Notes (Optional)
+                  </label>
+                  <input
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder="e.g. Call before delivery"
+                    className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-slate-300 outline-none focus:ring-2 focus:ring-[var(--pk-primary-soft)] focus:border-[var(--pk-primary)]"
+                  />
+                </div>
+              )}
             </div>
           </section>
 
@@ -274,7 +291,7 @@ export default function CheckoutPage() {
               Payment Method
             </h2>
             <div className="grid sm:grid-cols-2 gap-3">
-              {PAYMENT_OPTIONS.map((opt) => {
+              {enabledMethods.map((opt) => {
                 const Icon = opt.icon;
                 const active = paymentMethod === opt.id;
                 return (
@@ -284,12 +301,12 @@ export default function CheckoutPage() {
                     onClick={() => setPaymentMethod(opt.id)}
                     className={`flex items-start gap-3 p-4 rounded-xl border text-left transition ${
                       active
-                        ? 'border-emerald-600 bg-emerald-50 ring-2 ring-emerald-100'
+                        ? 'border-[var(--pk-primary)] bg-[var(--pk-primary-soft)] ring-2 ring-[var(--pk-primary-soft)]'
                         : 'border-slate-200 hover:border-slate-400'
                     }`}
                   >
                     <Icon
-                      className={`w-5 h-5 mt-0.5 ${active ? 'text-emerald-600' : 'text-slate-400'}`}
+                      className={`w-5 h-5 mt-0.5 ${active ? 'text-[var(--pk-primary)]' : 'text-slate-400'}`}
                     />
                     <span>
                       <span className="block text-sm font-bold text-slate-900">{opt.label}</span>
@@ -304,7 +321,7 @@ export default function CheckoutPage() {
           <button
             type="submit"
             disabled={submitting || !hydrated}
-            className="w-full lg:w-auto bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-sm px-8 py-3.5 rounded-xl shadow transition flex items-center justify-center gap-2"
+            className="w-full lg:w-auto bg-[var(--pk-primary)] hover:bg-[var(--pk-primary-dark)] disabled:opacity-50 text-white font-bold text-sm px-8 py-3.5 rounded-xl shadow transition flex items-center justify-center gap-2"
           >
             {submitting ? (
               <>
@@ -362,7 +379,7 @@ export default function CheckoutPage() {
                   value={discountInput}
                   onChange={(e) => setDiscountInput(e.target.value.toUpperCase())}
                   placeholder="SUMMER20"
-                  className="flex-1 px-3 py-2 text-xs rounded-lg border border-slate-300 outline-none focus:ring-2 focus:ring-emerald-100 focus:border-emerald-500 font-mono font-bold"
+                  className="flex-1 px-3 py-2 text-xs rounded-lg border border-slate-300 outline-none focus:ring-2 focus:ring-[var(--pk-primary-soft)] focus:border-[var(--pk-primary)] font-mono font-bold"
                 />
                 <button
                   type="button"
@@ -380,7 +397,7 @@ export default function CheckoutPage() {
               {discountMsg && (
                 <p
                   className={`text-[11px] font-bold mt-2 flex items-start gap-1.5 ${
-                    discountMsg.ok ? 'text-emerald-600' : 'text-red-500'
+                    discountMsg.ok ? 'text-[var(--pk-primary)]' : 'text-red-500'
                   }`}
                 >
                   {discountMsg.ok ? (
@@ -399,7 +416,7 @@ export default function CheckoutPage() {
                 <span className="font-bold text-slate-900">{formatPKR(subtotal)}</span>
               </div>
               {appliedDiscount && (
-                <div className="flex justify-between text-emerald-600">
+                <div className="flex justify-between text-[var(--pk-primary)]">
                   <span>Discount ({appliedDiscount.code})</span>
                   <span className="font-bold">− {formatPKR(appliedDiscount.amount)}</span>
                 </div>
@@ -412,7 +429,7 @@ export default function CheckoutPage() {
               </div>
               <div className="flex justify-between font-black text-slate-900 text-base pt-3 border-t border-slate-100">
                 <span>Estimated Total</span>
-                <span className="text-emerald-700">{formatPKR(estimatedTotal)}</span>
+                <span className="text-[var(--pk-primary-text)]">{formatPKR(estimatedTotal)}</span>
               </div>
               <p className="text-[10px] text-slate-400 pt-1">
                 The store server recomputes final totals from live prices — your quoted

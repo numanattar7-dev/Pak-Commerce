@@ -147,7 +147,7 @@ function SimulatedCheckout() {
               <p className="text-[10px] text-slate-400">Merchant: Khaadi Store</p>
             </div>
           </div>
-          <span className="text-[9px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+          <span className="text-[9px] font-black text-[var(--pk-primary-text)] bg-[var(--pk-primary-soft)] border-[var(--pk-primary-softer)] px-2 py-0.5 rounded-full">
             SSL SECURED
           </span>
         </div>

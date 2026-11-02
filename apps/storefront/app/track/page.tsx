@@ -38,8 +38,8 @@ export default function TrackPage() {
   return (
     <main className="max-w-lg mx-auto px-4 py-16 w-full">
       <div className="text-center mb-8">
-        <div className="w-14 h-14 bg-emerald-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-          <Package className="w-7 h-7 text-emerald-600" />
+        <div className="w-14 h-14 bg-[var(--pk-primary-soft)] rounded-2xl flex items-center justify-center mx-auto mb-4">
+          <Package className="w-7 h-7 text-[var(--pk-primary)]" />
         </div>
         <h1 className="text-2xl font-black text-slate-900">Track Your Order</h1>
         <p className="text-sm text-slate-500 mt-2">
@@ -69,7 +69,7 @@ export default function TrackPage() {
               setOrderNumber(e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, ''))
             }
             placeholder="PK-KKKSS9ZF"
-            className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-slate-300 outline-none focus:ring-2 focus:ring-emerald-100 focus:border-emerald-500 font-mono font-bold tracking-wide"
+            className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-slate-300 outline-none focus:ring-2 focus:ring-[var(--pk-primary-soft)] focus:border-[var(--pk-primary)] font-mono font-bold tracking-wide"
           />
         </div>
 
@@ -85,14 +85,14 @@ export default function TrackPage() {
               value={phone}
               onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 11))}
               placeholder="03001234567"
-              className="w-full pl-9 pr-3.5 py-2.5 text-sm rounded-xl border border-slate-300 outline-none focus:ring-2 focus:ring-emerald-100 focus:border-emerald-500"
+              className="w-full pl-9 pr-3.5 py-2.5 text-sm rounded-xl border border-slate-300 outline-none focus:ring-2 focus:ring-[var(--pk-primary-soft)] focus:border-[var(--pk-primary)]"
             />
           </div>
         </div>
 
         <button
           type="submit"
-          className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm py-3 rounded-xl transition flex items-center justify-center gap-2"
+          className="w-full bg-[var(--pk-primary)] hover:bg-[var(--pk-primary-dark)] text-white font-bold text-sm py-3 rounded-xl transition flex items-center justify-center gap-2"
         >
           <Package className="w-4 h-4" />
           Track Order
@@ -105,7 +105,7 @@ export default function TrackPage() {
 
       <p className="text-center text-xs text-slate-400 mt-6">
         Haven&apos;t ordered yet?{' '}
-        <Link href="/products" className="font-bold text-emerald-600 hover:underline">
+        <Link href="/products" className="font-bold text-[var(--pk-primary)] hover:underline">
           Browse the collection
         </Link>
       </p>

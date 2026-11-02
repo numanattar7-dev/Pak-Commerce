@@ -267,6 +267,57 @@ export function submitBankProof(body: {
 }
 
 // ---------------------------------------------------------------------------
+// Store customization (theme editor) — public config + pages
+// ---------------------------------------------------------------------------
+
+export type StoreCustomization = {
+  branding: { logoUrl?: string; faviconUrl?: string; tagline?: string };
+  theme: { primary?: string; accent?: string };
+  announcement: { enabled?: boolean; text?: string };
+  hero: {
+    enabled?: boolean;
+    badge?: string;
+    title?: string;
+    subtitle?: string;
+    imageUrl?: string;
+    ctaText?: string;
+    ctaLink?: string;
+  };
+  sections: { showFeatures?: boolean; featuredCount?: number; aboutBlurb?: string };
+  header: { menuLinks?: Array<{ label: string; href: string }> };
+  footer: {
+    aboutText?: string;
+    quickLinks?: Array<{ label: string; href: string }>;
+    social?: { whatsapp?: string; instagram?: string; facebook?: string; tiktok?: string };
+    copyright?: string;
+  };
+  payments: { COD?: boolean; IBFT?: boolean; RAAST?: boolean; JAZZCASH?: boolean; EASYPAISA?: boolean };
+  checkout: { confirmationMsg?: string; allowNotes?: boolean };
+  seo: { metaTitle?: string; metaDescription?: string };
+};
+
+/** Public — fetch this store's customization config (falls back to defaults client-side). */
+export function fetchStoreCustomization() {
+  return request<{
+    store: {
+      name: string;
+      subdomain: string;
+      logoUrl?: string | null;
+      bannerUrl?: string | null;
+      phoneSupport?: string | null;
+    };
+    config: Record<string, unknown>;
+  }>(`/store-settings/public/${SUBDOMAIN}`);
+}
+
+/** Public — published custom pages (About Us, FAQ…) for footer/header links. */
+export function fetchStorePages() {
+  return request<Array<{ slug: string; title: string; updatedAt: string }>>(
+    `/store-pages/public/${SUBDOMAIN}`,
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 

@@ -13,6 +13,7 @@ import { AnalyticsModule } from './analytics/analytics.module';
 import { CouriersModule } from './couriers/couriers.module';
 import { ShippingRulesModule } from './shipping-rules/shipping-rules.module';
 import { PaymentsModule } from './payments/payments.module';
+import { StoreSettingsModule } from './store-settings/store-settings.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { PaymentsModule } from './payments/payments.module';
     CouriersModule,
     ShippingRulesModule,
     PaymentsModule,
+    StoreSettingsModule,
   ],
 })
 export class AppModule {}

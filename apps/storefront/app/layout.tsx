@@ -3,11 +3,28 @@ import type { Metadata } from 'next';
 import Providers from '@/components/Providers';
 import Shell from '@/components/Shell';
 
-export const metadata: Metadata = {
-  title: 'Khaadi Unstitched — Pak Commerce Storefront',
-  description:
-    'Buy premium Pakistani unstitched lawn, cotton and festive wear with Cash on Delivery (COD).',
-};
+export async function generateMetadata(): Promise<Metadata> {
+  // Store-level SEO (Customize Store → SEO) — falls back silently on any error
+  try {
+    const base = process.env.NEXT_PUBLIC_API_BASE || 'http://127.0.0.1:4000';
+    const res = await fetch(`${base}/store-settings/public/khaadi`, { next: { revalidate: 60 } });
+    if (res.ok) {
+      const data = await res.json();
+      const cfg = data?.config ?? {};
+      const title = cfg?.seo?.metaTitle || `${data.store?.name ?? 'Pak Commerce'} — Online Store`;
+      const description =
+        cfg?.seo?.metaDescription ||
+        'Buy premium Pakistani products online with Cash on Delivery (COD).';
+      return { title, description };
+    }
+  } catch {
+    /* fall through to defaults */
+  }
+  return {
+    title: 'Pak Commerce Storefront',
+    description: 'Buy premium Pakistani products online with Cash on Delivery (COD).',
+  };
+}
 
 export default function RootLayout({
   children,

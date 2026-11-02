@@ -16,6 +16,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { useCart, getLastOrder } from '@/lib/cart';
+import { useStore } from '@/lib/store';
 import {
   PaymentInitiation,
   TrackedOrder,
@@ -53,6 +54,7 @@ export default function OrderStatusPage() {
 function OrderStatusInner() {
   const params = useParams<{ orderNumber: string }>();
   const search = useSearchParams();
+  const { customization: cfg } = useStore();
   const orderNumber = decodeURIComponent(params?.orderNumber || '');
 
   const queryPhone = search.get('phone') || '';
@@ -174,7 +176,7 @@ function OrderStatusInner() {
             <span
               className={`text-[10px] font-black px-2.5 py-1 rounded-full ${
                 order.orderStatus === 'DELIVERED'
-                  ? 'bg-emerald-600 text-white'
+                  ? 'bg-[var(--pk-primary)] text-white'
                   : order.orderStatus === 'PENDING'
                     ? 'bg-amber-100 text-amber-800'
                     : order.orderStatus === 'CANCELLED'
@@ -205,6 +207,13 @@ function OrderStatusInner() {
 
       {!isCancelled && <FlowBar currentIdx={currentIdx} />}
 
+      {/* merchant confirmation message (Customize Store → Checkout) */}
+      {!isCancelled && cfg.checkout.confirmationMsg && (
+        <div className="rounded-2xl border border-slate-200 bg-white px-5 py-3.5 mb-6 text-sm text-slate-700 font-medium">
+          {cfg.checkout.confirmationMsg}
+        </div>
+      )}
+
       {isCancelled && (
         <div
           className={`rounded-2xl border p-5 mb-6 text-sm font-bold ${
@@ -224,12 +233,12 @@ function OrderStatusInner() {
         <div
           className={`rounded-2xl border p-5 mb-6 ${
             order.codVerification?.isVerified
-              ? 'bg-emerald-50 border-emerald-200'
+              ? 'bg-[var(--pk-primary-soft)] border-[var(--pk-primary-softer)]'
               : 'bg-amber-50 border-amber-200'
           }`}
         >
           {order.codVerification?.isVerified ? (
-            <p className="flex items-center gap-2 text-sm font-bold text-emerald-800">
+            <p className="flex items-center gap-2 text-sm font-bold text-[var(--pk-primary-text)]">
               <ShieldCheck className="w-5 h-5" /> COD order verified — the store can pack
               and dispatch it now.
             </p>
@@ -280,7 +289,7 @@ function OrderStatusInner() {
               {otpMsg && (
                 <p
                   className={`text-xs font-bold mt-2 flex items-center gap-1.5 ${
-                    otpMsg.ok ? 'text-emerald-700' : 'text-red-600'
+                    otpMsg.ok ? 'text-[var(--pk-primary-text)]' : 'text-red-600'
                   }`}
                 >
                   {otpMsg.ok ? (
@@ -305,7 +314,7 @@ function OrderStatusInner() {
       {(order.fulfillments?.length ?? 0) > 0 && (
         <div className="bg-white rounded-2xl border border-slate-200 p-5 mb-6">
           <h2 className="text-xs font-black text-slate-900 uppercase tracking-widest mb-3 flex items-center gap-2">
-            <Truck className="w-4 h-4 text-emerald-600" /> Shipment
+            <Truck className="w-4 h-4 text-[var(--pk-primary)]" /> Shipment
           </h2>
           <div className="space-y-3">
             {order.fulfillments!.map((f) => (
@@ -336,7 +345,7 @@ function OrderStatusInner() {
       {/* items + totals */}
       <div className="bg-white rounded-2xl border border-slate-200 p-5 mb-6">
         <h2 className="text-xs font-black text-slate-900 uppercase tracking-widest mb-3 flex items-center gap-2">
-          <Package className="w-4 h-4 text-emerald-600" /> Items (
+          <Package className="w-4 h-4 text-[var(--pk-primary)]" /> Items (
           {order.items.length})
         </h2>
         <table className="w-full text-sm">
@@ -396,7 +405,7 @@ function OrderStatusInner() {
       </div>
 
       <div className="text-center">
-        <Link href="/products" className="text-xs font-bold text-emerald-600 hover:underline">
+        <Link href="/products" className="text-xs font-bold text-[var(--pk-primary)] hover:underline">
           Continue shopping →
         </Link>
       </div>
@@ -417,7 +426,7 @@ function FlowBar({ currentIdx }: { currentIdx: number }) {
                 <span
                   className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-black border-2 transition ${
                     done
-                      ? 'bg-emerald-600 border-emerald-600 text-white'
+                      ? 'bg-[var(--pk-primary)] border-[var(--pk-primary)] text-white'
                       : 'bg-white border-slate-200 text-slate-300'
                   }`}
                 >
@@ -425,7 +434,7 @@ function FlowBar({ currentIdx }: { currentIdx: number }) {
                 </span>
                 <span
                   className={`text-[9px] font-bold mt-1.5 uppercase tracking-wide ${
-                    done ? 'text-emerald-700' : 'text-slate-300'
+                    done ? 'text-[var(--pk-primary-text)]' : 'text-slate-300'
                   }`}
                 >
                   {f.label}
@@ -433,7 +442,7 @@ function FlowBar({ currentIdx }: { currentIdx: number }) {
               </div>
               {!last && (
                 <div
-                  className={`flex-1 h-0.5 mx-1.5 -mt-4 ${i < currentIdx ? 'bg-emerald-500' : 'bg-slate-200'}`}
+                  className={`flex-1 h-0.5 mx-1.5 -mt-4 ${i < currentIdx ? 'bg-[var(--pk-primary-soft)]0' : 'bg-slate-200'}`}
                 />
               )}
             </React.Fragment>
@@ -463,7 +472,7 @@ function Row({
           bold
             ? 'font-black text-slate-900 text-base'
             : green
-              ? 'font-bold text-emerald-600'
+              ? 'font-bold text-[var(--pk-primary)]'
               : 'font-semibold text-slate-800'
         }
       >
@@ -496,7 +505,7 @@ function MissingOrder({
       {showTrackLink && (
         <Link
           href="/products"
-          className="inline-flex items-center gap-2 mt-6 ml-2 text-xs font-bold text-emerald-600 hover:underline"
+          className="inline-flex items-center gap-2 mt-6 ml-2 text-xs font-bold text-[var(--pk-primary)] hover:underline"
         >
           Continue shopping →
         </Link>
@@ -584,8 +593,8 @@ function PaymentPanel({
   // Paid state
   if (order.paymentStatus === 'PAID') {
     return (
-      <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
-        <p className="flex items-center gap-2 text-sm font-bold text-emerald-800">
+      <div className="rounded-2xl border border-[var(--pk-primary-softer)] bg-[var(--pk-primary-soft)] p-5">
+        <p className="flex items-center gap-2 text-sm font-bold text-[var(--pk-primary-text)]">
           <ShieldCheck className="w-5 h-5" /> Payment of {formatPKR(order.totalAmount)} received via{' '}
           {gatewayLabel}.
         </p>
@@ -672,7 +681,7 @@ function PaymentPanel({
       )}
 
       {doneMsg && (
-        <p className="text-xs font-bold text-emerald-700 mt-2.5 flex items-center gap-1.5">
+        <p className="text-xs font-bold text-[var(--pk-primary-text)] mt-2.5 flex items-center gap-1.5">
           <CheckCircle2 className="w-3.5 h-3.5" /> {doneMsg}
         </p>
       )}

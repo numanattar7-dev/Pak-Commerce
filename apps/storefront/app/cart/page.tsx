@@ -27,7 +27,7 @@ export default function CartPage() {
         </p>
         <Link
           href="/products"
-          className="inline-flex items-center gap-2 mt-6 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm px-6 py-3 rounded-xl transition"
+          className="inline-flex items-center gap-2 mt-6 bg-[var(--pk-primary)] hover:bg-[var(--pk-primary-dark)] text-white font-bold text-sm px-6 py-3 rounded-xl transition"
         >
           Start Shopping <ArrowRight className="w-4 h-4" />
         </Link>
@@ -42,7 +42,7 @@ export default function CartPage() {
           <h1 className="text-3xl font-black text-slate-900">Your Cart</h1>
           <p className="text-xs text-slate-500 mt-1">
             {count} item{count === 1 ? '' : 's'} ·{' '}
-            <Link href="/products" className="text-emerald-600 font-bold hover:underline">
+            <Link href="/products" className="text-[var(--pk-primary)] font-bold hover:underline">
               continue shopping
             </Link>
           </p>
@@ -81,7 +81,7 @@ export default function CartPage() {
               <div className="flex-1 min-w-0">
                 <Link
                   href={`/products/${item.productKey}`}
-                  className="font-bold text-slate-900 text-sm hover:text-emerald-700"
+                  className="font-bold text-slate-900 text-sm hover:text-[var(--pk-primary-text)]"
                 >
                   {item.title}
                 </Link>
@@ -145,13 +145,13 @@ export default function CartPage() {
               </div>
               <div className="flex justify-between font-black text-slate-900 text-base pt-3 border-t border-slate-100">
                 <span>Total</span>
-                <span className="text-emerald-700">{formatPKR(subtotal)}</span>
+                <span className="text-[var(--pk-primary-text)]">{formatPKR(subtotal)}</span>
               </div>
             </div>
 
             <Link
               href="/checkout"
-              className="mt-5 w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm py-3.5 rounded-xl shadow transition flex items-center justify-center gap-2"
+              className="mt-5 w-full bg-[var(--pk-primary)] hover:bg-[var(--pk-primary-dark)] text-white font-bold text-sm py-3.5 rounded-xl shadow transition flex items-center justify-center gap-2"
             >
               Proceed to Checkout <ArrowRight className="w-4 h-4" />
             </Link>

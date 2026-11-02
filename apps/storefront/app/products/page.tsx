@@ -43,7 +43,7 @@ export default function CatalogPage() {
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search fabrics, designs…"
-            className="w-full pl-9 pr-4 py-2.5 text-sm rounded-xl border border-slate-300 bg-white outline-none focus:ring-2 focus:ring-emerald-100 focus:border-emerald-500"
+            className="w-full pl-9 pr-4 py-2.5 text-sm rounded-xl border border-slate-300 bg-white outline-none focus:ring-2 focus:ring-[var(--pk-primary-soft)] focus:border-[var(--pk-primary)]"
           />
         </div>
         <div className="flex flex-wrap gap-1.5">
@@ -53,8 +53,8 @@ export default function CatalogPage() {
               onClick={() => setCategory(c)}
               className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition ${
                 category === c
-                  ? 'bg-emerald-600 text-white shadow-sm'
-                  : 'bg-white text-slate-600 border border-slate-200 hover:border-emerald-400 hover:text-emerald-700'
+                  ? 'bg-[var(--pk-primary)] text-white shadow-sm'
+                  : 'bg-white text-slate-600 border border-slate-200 hover:border-[var(--pk-primary)] hover:text-[var(--pk-primary-text)]'
               }`}
             >
               {c}
@@ -81,7 +81,7 @@ export default function CatalogPage() {
               setQ('');
               setCategory('All');
             }}
-            className="inline-block mt-4 text-xs font-bold text-emerald-600 hover:underline"
+            className="inline-block mt-4 text-xs font-bold text-[var(--pk-primary)] hover:underline"
           >
             Clear filters
           </Link>

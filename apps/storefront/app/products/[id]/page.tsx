@@ -120,9 +120,9 @@ export default function ProductDetailPage({
     <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full">
       {/* breadcrumb */}
       <nav className="flex items-center gap-1.5 text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-6">
-        <Link href="/" className="hover:text-emerald-600">Home</Link>
+        <Link href="/" className="hover:text-[var(--pk-primary)]">Home</Link>
         <span>/</span>
-        <Link href="/products" className="hover:text-emerald-600">Shop</Link>
+        <Link href="/products" className="hover:text-[var(--pk-primary)]">Shop</Link>
         <span>/</span>
         <span className="text-slate-600 truncate max-w-[220px]">{product.title}</span>
       </nav>
@@ -150,7 +150,7 @@ export default function ProductDetailPage({
                   key={i}
                   onClick={() => setActiveImg(i)}
                   className={`w-16 h-16 rounded-lg overflow-hidden border-2 transition ${
-                    activeImg === i ? 'border-emerald-600' : 'border-slate-200 hover:border-slate-300'
+                    activeImg === i ? 'border-[var(--pk-primary)]' : 'border-slate-200 hover:border-slate-300'
                   }`}
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -164,7 +164,7 @@ export default function ProductDetailPage({
         {/* info */}
         <div>
           <div className="flex flex-wrap gap-1.5 mb-3">
-            <span className="text-[10px] font-bold bg-emerald-50 text-emerald-700 px-2 py-1 rounded-md border border-emerald-200">
+            <span className="text-[10px] font-bold bg-[var(--pk-primary-soft)] text-[var(--pk-primary-text)] px-2 py-1 rounded-md border border-[var(--pk-primary-softer)]">
               {product.category}
             </span>
             {product.isHalal && (
@@ -181,7 +181,7 @@ export default function ProductDetailPage({
 
           <h1 className="text-2xl md:text-3xl font-black text-slate-900">{product.title}</h1>
           {product.titleUrdu && (
-            <p dir="rtl" className="text-lg font-serif text-emerald-800 mt-1">
+            <p dir="rtl" className="text-lg font-serif text-[var(--pk-primary-text)] mt-1">
               {product.titleUrdu}
             </p>
           )}
@@ -229,7 +229,7 @@ export default function ProductDetailPage({
                       }}
                       className={`px-4 py-2 rounded-xl text-xs font-bold border transition text-left ${
                         active
-                          ? 'border-emerald-600 bg-emerald-50 text-emerald-800 ring-2 ring-emerald-100'
+                          ? 'border-[var(--pk-primary)] bg-[var(--pk-primary-soft)] text-[var(--pk-primary-text)] ring-2 ring-[var(--pk-primary-soft)]'
                           : 'border-slate-200 hover:border-slate-400 text-slate-700'
                       } ${disabled ? 'opacity-40 cursor-not-allowed line-through' : ''}`}
                     >
@@ -246,20 +246,20 @@ export default function ProductDetailPage({
 
           {/* qty + add */}
           {added ? (
-            <div className="mt-6 bg-emerald-50 border border-emerald-200 rounded-2xl p-5 flex flex-col sm:flex-row items-center justify-between gap-3">
-              <span className="flex items-center gap-2 text-sm font-bold text-emerald-800">
+            <div className="mt-6 bg-[var(--pk-primary-soft)] border border-[var(--pk-primary-softer)] rounded-2xl p-5 flex flex-col sm:flex-row items-center justify-between gap-3">
+              <span className="flex items-center gap-2 text-sm font-bold text-[var(--pk-primary-text)]">
                 <Check className="w-5 h-5" /> Added to cart
               </span>
               <div className="flex gap-2">
                 <Link
                   href="/products"
-                  className="text-xs font-bold text-slate-600 hover:text-slate-900 px-4 py-2.5 rounded-xl hover:bg-emerald-100 transition"
+                  className="text-xs font-bold text-slate-600 hover:text-slate-900 px-4 py-2.5 rounded-xl hover:bg-[var(--pk-primary-soft)] transition"
                 >
                   Continue shopping
                 </Link>
                 <Link
                   href="/cart"
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-5 py-2.5 rounded-xl flex items-center gap-1.5 transition"
+                  className="bg-[var(--pk-primary)] hover:bg-[var(--pk-primary-dark)] text-white text-xs font-bold px-5 py-2.5 rounded-xl flex items-center gap-1.5 transition"
                 >
                   <ShoppingBag className="w-3.5 h-3.5" /> Go to cart
                 </Link>
@@ -289,7 +289,7 @@ export default function ProductDetailPage({
               <button
                 onClick={handleAdd}
                 disabled={!inStock}
-                className="flex-1 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-bold text-sm px-6 py-3 rounded-xl shadow-sm transition flex items-center justify-center gap-2"
+                className="flex-1 bg-[var(--pk-primary)] hover:bg-[var(--pk-primary-dark)] disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-bold text-sm px-6 py-3 rounded-xl shadow-sm transition flex items-center justify-center gap-2"
               >
                 <ShoppingBag className="w-4 h-4" />
                 {inStock ? 'Add to Cart' : 'Out of Stock'}
@@ -300,17 +300,17 @@ export default function ProductDetailPage({
           {/* trust row */}
           <div className="grid grid-cols-3 gap-3 mt-8 text-center">
             <div className="bg-white border border-slate-200 rounded-xl p-3.5">
-              <Truck className="w-5 h-5 text-emerald-600 mx-auto mb-1.5" />
+              <Truck className="w-5 h-5 text-[var(--pk-primary)] mx-auto mb-1.5" />
               <p className="text-[10px] font-bold text-slate-700">Nationwide Delivery</p>
               <p className="text-[9px] text-slate-400 mt-0.5">100+ cities</p>
             </div>
             <div className="bg-white border border-slate-200 rounded-xl p-3.5">
-              <Banknote className="w-5 h-5 text-emerald-600 mx-auto mb-1.5" />
+              <Banknote className="w-5 h-5 text-[var(--pk-primary)] mx-auto mb-1.5" />
               <p className="text-[10px] font-bold text-slate-700">Cash on Delivery</p>
               <p className="text-[9px] text-slate-400 mt-0.5">Pay at doorstep</p>
             </div>
             <div className="bg-white border border-slate-200 rounded-xl p-3.5">
-              <ShieldCheck className="w-5 h-5 text-emerald-600 mx-auto mb-1.5" />
+              <ShieldCheck className="w-5 h-5 text-[var(--pk-primary)] mx-auto mb-1.5" />
               <p className="text-[10px] font-bold text-slate-700">7-Day Exchange</p>
               <p className="text-[9px] text-slate-400 mt-0.5">Hassle-free</p>
             </div>
