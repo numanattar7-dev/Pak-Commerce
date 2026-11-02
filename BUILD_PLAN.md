@@ -2,7 +2,7 @@
 
 **Philosophy:** First build an *exact Shopify* core commerce engine → then add Pakistan-specific essentials on top of it.
 **Date:** October 31, 2026
-**Approach:** Build on the existing codebase (backend ~90%, admin ~35%, storefront ~60%).
+**Approach:** Build on the existing codebase (backend ~90%, admin done (Phase 2), storefront done (Phase 3); Phases 0–3 complete).
 
 ---
 
@@ -111,11 +111,15 @@ Acceptance: login/token works on every endpoint; code is committed to Git; stagi
 - Login gate (JWT in localStorage) + persistent app shell with API status — done
 - Verified in browser: all 8 pages render live data with 0 console errors; merchant flow executed end-to-end via UI (rates → fulfill → TCS booking → FBR invoice)
 
-# PHASE 3 — Shopify Core: Storefront (~3 weeks) — NEXT
+# PHASE 3 — Shopify Core: Storefront (~3 weeks) — DONE (browser E2E green 2026-11-02)
 
-- Home + catalog (done in prototype form), product detail page, cart, checkout (with discount box — done), order status page + public tracking (`GET /orders/track/:orderNumber/:phone` ready)
-- Multi-page Next.js routes instead of single-page prototype
-- Tenant theming (logo/banner colors from Tenant fields)
+- Multi-page Next.js App Router routes under `apps/storefront`: `/`, `/products`, `/products/[slug-or-id]`, `/cart`, `/checkout`, `/order/[orderNumber]?phone=`, `/track` — done
+- Shared shell (header/cart badge/footer), store context (one-time catalog fetch), cart context (localStorage `pkc_cart_v1`), product cards — done
+- Checkout: 5 payment methods (COD/IBFT/RAAST/JAZZCASH/EASYPAISA), server-validated discount box, `items` sent as `{variantId, quantity}` only (prices always server-computed) — done
+- Order status page: FlowBar timeline, totals breakdown (server totals incl. discount + per-city shipping), COD OTP verify/resend panel — done
+- Public COD OTP endpoints scoped by orderNumber + phone (`POST /orders/verify-otp`, `POST /orders/resend-otp`) + enriched public tracking (includes `codVerification` and `fulfillments` ordered latest-first) — done (backend)
+- Browser E2E: home → catalog (search/category chips) → detail (variant picker) → cart → checkout (discount `EID500` live-validated) → order placed (server totals 11,998 − 500 + 150 = 11,648) → OTP verified → status VERIFIED → track-page prefill works; 0 console errors
+- Tenant theming (logo/banner colors from Tenant fields) — deferred (store field currently has name/subdomain only)
 
 # PHASE 4 — Pakistan Essential Layer (full)
 
