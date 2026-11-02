@@ -1,60 +1,33 @@
+# Pak Commerce API — Render web service (staging)
+# Database: Neon Postgres (NOT Render Postgres) — paste the Neon POOLED connection
+# string as DATABASE_URL on first deploy (sync: false).
+# Gateway/courier/SMS/FBR credentials are NOT env vars anymore — they are per-tenant
+# rows in integration_settings (Admin → Settings → Integrations, write-only).
 services:
   - type: web
     name: pak-commerce-api
     env: node
-    region: singapore
+    region: singapore            # same region as the Neon ap-southeast-1 database
     plan: free
-    buildCommand: npm install && npx prisma generate && npx prisma migrate deploy && npm run build
-    startCommand: npm run start:prod
+    buildCommand: npm install && npx prisma generate --schema=packages/database/prisma/schema.prisma && npx prisma db push --schema=packages/database/prisma/schema.prisma --skip-generate && npm run build --workspace=apps/api-backend
+    startCommand: node apps/api-backend/dist/main.js
+    healthCheckPath: /products/store/khaadi
     envVars:
       - key: NODE_ENV
         value: production
+      - key: NODE_VERSION
+        value: "20"
       - key: PORT
         value: "4000"
       - key: DATABASE_URL
-        fromDatabase:
-          name: pak-commerce-db
-          property: connectionString
+        sync: false              # Neon pooled connection string
       - key: JWT_SECRET
         generateValue: true
       - key: JWT_EXPIRES_IN
         value: "7d"
-      - key: JAZZCASH_MERCHANT_ID
-        sync: false
-      - key: JAZZCASH_PASSWORD
-        sync: false
-      - key: JAZZCASH_INTEGRITY_SALT
-        sync: false
-      - key: JAZZCASH_SANDBOX
-        value: "true"
-      - key: JAZZCASH_RETURN_URL
-        sync: false
-      - key: JAZZCASH_CALLBACK_URL
-        sync: false
-      - key: EASYPAISA_MERCHANT_ID
-        sync: false
-      - key: EASYPAISA_PASSWORD
-        sync: false
-      - key: EASYPAISA_STORE_ID
-        sync: false
-      - key: EASYPAISA_SANDBOX
-        value: "true"
-      - key: EASYPAISA_RETURN_URL
-        sync: false
-      - key: EASYPAISA_CALLBACK_URL
-        sync: false
-      - key: TWILIO_ACCOUNT_SID
-        sync: false
-      - key: TWILIO_AUTH_TOKEN
-        sync: false
-      - key: TWILIO_PHONE_NUMBER
-        sync: false
-      - key: TWILIO_WHATSAPP_NUMBER
-        sync: false
-
-databases:
-  - name: pak-commerce-db
-    databaseName: pak_commerce
-    user: pak_commerce_user
-    plan: free
-    region: singapore
+      - key: STOREFRONT_URL
+        sync: false              # https://<storefront-project>.vercel.app
+      - key: ADMIN_URL
+        sync: false              # https://<admin-project>.vercel.app
+      - key: CORS_ORIGINS
+        sync: false              # comma-separated extra allowed origins (optional)

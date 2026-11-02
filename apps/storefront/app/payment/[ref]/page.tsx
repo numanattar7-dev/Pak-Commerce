@@ -3,7 +3,7 @@
 import React, { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
-import { CheckCircle2, CircleAlert, Loader2, ShieldAlert, Wallet } from 'lucide-react';
+import { CheckCircle2, CircleAlert, Loader2, ShieldAlert, Wallet, XCircle } from 'lucide-react';
 import { formatPKR, initiatePayment, simulatePayment } from '@/lib/api';
 
 export default function PaymentPage() {

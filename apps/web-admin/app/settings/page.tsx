@@ -241,7 +241,11 @@ export default function SettingsPage() {
               <div>
                 <p className="text-xs text-slate-400 uppercase">Subdomain</p>
                 <p className="font-mono text-emerald-700 cursor-pointer hover:underline">
-                  <a href={`http://localhost:3001`} target="_blank" rel="noreferrer">
+                  <a
+                    href={process.env.NEXT_PUBLIC_STOREFRONT_URL || 'http://localhost:3001'}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
                     {tenant.subdomain}.pakcommerce.pk ↗
                   </a>
                 </p>
@@ -260,7 +264,9 @@ export default function SettingsPage() {
               </div>
               <div>
                 <p className="text-xs text-slate-400 uppercase">Storefront URL (dev)</p>
-                <p className="font-mono text-xs text-slate-500">http://localhost:3001</p>
+                <p className="font-mono text-xs text-slate-500">
+                  {process.env.NEXT_PUBLIC_STOREFRONT_URL || 'http://localhost:3001'}
+                </p>
               </div>
               <div>
                 <p className="text-xs text-slate-400 uppercase">Created</p>

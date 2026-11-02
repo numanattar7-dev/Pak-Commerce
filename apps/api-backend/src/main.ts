@@ -9,11 +9,18 @@ async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
   // Enable CORS for frontend apps
+  // CORS_ORIGINS: comma-separated extra origins (e.g. Vercel preview/staging URLs)
+  const extraOrigins = (process.env.CORS_ORIGINS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
   app.enableCors({
     origin: [
       'http://localhost:3000', // Admin Dashboard
       'http://localhost:3001', // Storefront
       /\.pakcommerce\.pk$/,    // Production subdomains
+      /\.vercel\.app$/,        // Staging / preview deployments
+      ...extraOrigins,         // Custom domains
     ],
     credentials: true,
   });

@@ -5,7 +5,7 @@
 // Talks to the api-backend (NestJS). JWT token lives in localStorage.
 // ---------------------------------------------------------------------------
 
-let API_BASE = 'http://127.0.0.1:4000'; // try IPv4 loopback first (Node/IPv6-safe)
+let API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://127.0.0.1:4000'; // try IPv4 loopback first (Node/IPv6-safe)
 
 export const TOKEN_KEY = 'pkc_admin_token';
 
@@ -75,7 +75,8 @@ export async function api<T = any>(
     return (await attempt(API_BASE).then((r) => r.json())) as T;
   } catch (err) {
     if (err instanceof ApiError || options.skipFallback) throw err;
-    // Network failure → try localhost hostname
+    // Network failure → try localhost hostname (dev only; custom API base = no fallback)
+    if (process.env.NEXT_PUBLIC_API_BASE) throw err;
     const second = 'http://localhost:4000';
     if (API_BASE === second) throw err;
     try {

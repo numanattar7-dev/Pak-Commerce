@@ -153,7 +153,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               {apiUp ? 'API Connected' : 'API Offline'} · {getApiBase().replace('http://', '')}
             </div>
             <a
-              href="http://localhost:3001"
+              href={process.env.NEXT_PUBLIC_STOREFRONT_URL || 'http://localhost:3001'}
               target="_blank"
               rel="noreferrer"
               className="bg-slate-900 hover:bg-slate-800 text-white px-3.5 py-2 rounded-lg text-xs font-semibold transition hidden md:flex items-center gap-2"
