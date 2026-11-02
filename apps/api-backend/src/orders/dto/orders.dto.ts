@@ -76,6 +76,34 @@ export class VerifyOtpDto {
   otpCode: string;
 }
 
+// Customer-side (public) COD OTP — scoped by order number + phone, the same
+// ownership model as public order tracking
+export class PublicVerifyOtpDto {
+  @IsString()
+  subdomain: string;
+
+  @IsString()
+  orderNumber: string;
+
+  @Matches(/^03\d{9}$/, { message: 'Phone must be 11 digits starting with 03' })
+  phone: string;
+
+  @IsString()
+  @Matches(/^\d{6}$/, { message: 'OTP must be 6 digits' })
+  otpCode: string;
+}
+
+export class PublicResendOtpDto {
+  @IsString()
+  subdomain: string;
+
+  @IsString()
+  orderNumber: string;
+
+  @Matches(/^03\d{9}$/, { message: 'Phone must be 11 digits starting with 03' })
+  phone: string;
+}
+
 export class UpdateOrderStatusDto {
   @IsEnum(['PENDING', 'VERIFIED', 'PROCESSING', 'DISPATCHED', 'DELIVERED', 'CANCELLED', 'RTO'])
   status: 'PENDING' | 'VERIFIED' | 'PROCESSING' | 'DISPATCHED' | 'DELIVERED' | 'CANCELLED' | 'RTO';

@@ -10,7 +10,15 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { OrdersService } from './orders.service';
-import { CreateOrderDto, VerifyOtpDto, UpdateOrderStatusDto, CreateFulfillmentDto, CreateRefundDto } from './dto';
+import {
+  CreateOrderDto,
+  VerifyOtpDto,
+  PublicVerifyOtpDto,
+  PublicResendOtpDto,
+  UpdateOrderStatusDto,
+  CreateFulfillmentDto,
+  CreateRefundDto,
+} from './dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
@@ -21,6 +29,26 @@ export class OrdersController {
   @Post()
   async createUnauthenticated(@Body() dto: CreateOrderDto) {
     return this.ordersService.create('', dto);
+  }
+
+  // ---- Public COD OTP (customer side) — owned via order number + phone ----
+  @Post('verify-otp')
+  async verifyOtpPublic(@Body() dto: PublicVerifyOtpDto) {
+    return this.ordersService.verifyOtpPublic(
+      dto.subdomain,
+      dto.orderNumber,
+      dto.phone,
+      dto.otpCode,
+    );
+  }
+
+  @Post('resend-otp')
+  async resendOtpPublic(@Body() dto: PublicResendOtpDto) {
+    return this.ordersService.resendOtpPublic(
+      dto.subdomain,
+      dto.orderNumber,
+      dto.phone,
+    );
   }
 
   @UseGuards(JwtAuthGuard)

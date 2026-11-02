@@ -1,6 +1,8 @@
 export {
   CreateOrderDto,
   VerifyOtpDto,
+  PublicVerifyOtpDto,
+  PublicResendOtpDto,
   UpdateOrderStatusDto,
   OrderItemDto,
   FulfillmentItemDto,

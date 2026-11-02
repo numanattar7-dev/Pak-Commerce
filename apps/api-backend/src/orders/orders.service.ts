@@ -266,6 +266,48 @@ export class OrdersService {
       throw new NotFoundException('Order not found');
     }
 
+    return this.verifyOtpForOrder(order, dto.otpCode);
+  }
+
+  // Customer-side (public) verification — same ownership proof as public
+  // tracking: order number + phone, scoped to a store subdomain
+  async verifyOtpPublic(
+    subdomain: string,
+    orderNumber: string,
+    phone: string,
+    otpCode: string,
+  ) {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { subdomain },
+    });
+    if (!tenant) {
+      throw new NotFoundException('Store not found');
+    }
+
+    const order = await this.prisma.order.findFirst({
+      where: { tenantId: tenant.id, orderNumber, customerPhone: phone },
+      include: { codVerification: true },
+    });
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+
+    return this.verifyOtpForOrder(order, otpCode);
+  }
+
+  private async verifyOtpForOrder(
+    order: {
+      id: string;
+      codVerification: {
+        id: string;
+        otpCode: string;
+        isVerified: boolean;
+        attempts: number;
+        expiresAt: Date | null;
+      } | null;
+    },
+    otpCode: string,
+  ) {
     if (!order.codVerification) {
       throw new BadRequestException('COD verification not required for this order');
     }
@@ -274,9 +316,7 @@ export class OrdersService {
       throw new BadRequestException('OTP already verified');
     }
 
-    if (
-      order.codVerification.attempts >= 5
-    ) {
+    if (order.codVerification.attempts >= 5) {
       throw new BadRequestException(
         'Too many attempts. Request a new OTP (resend) and try again.',
       );
@@ -291,7 +331,7 @@ export class OrdersService {
       );
     }
 
-    if (order.codVerification.otpCode !== dto.otpCode) {
+    if (order.codVerification.otpCode !== otpCode) {
       // Increment attempts
       await this.prisma.codVerification.update({
         where: { id: order.codVerification.id },
@@ -324,7 +364,42 @@ export class OrdersService {
 
   async resendOtp(tenantId: string, orderId: string) {
     const order = await this.findOne(tenantId, orderId);
+    return this.resendOtpForOrder(order);
+  }
 
+  // Customer-side (public) resend — order number + phone prove ownership
+  async resendOtpPublic(
+    subdomain: string,
+    orderNumber: string,
+    phone: string,
+  ) {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { subdomain },
+    });
+    if (!tenant) {
+      throw new NotFoundException('Store not found');
+    }
+
+    const order = await this.prisma.order.findFirst({
+      where: { tenantId: tenant.id, orderNumber, customerPhone: phone },
+      include: { items: true },
+    });
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+
+    return this.resendOtpForOrder(order);
+  }
+
+  private async resendOtpForOrder(
+    order: {
+      id: string;
+      orderNumber: string;
+      customerPhone: string;
+      paymentMethod: string;
+      orderStatus: string;
+    },
+  ) {
     if (order.paymentMethod !== 'COD') {
       throw new BadRequestException('OTP resend applies to COD orders only');
     }
@@ -336,7 +411,7 @@ export class OrdersService {
     }
 
     const existing = await this.prisma.codVerification.findUnique({
-      where: { orderId },
+      where: { orderId: order.id },
     });
     if (existing?.isVerified) {
       throw new BadRequestException('Order is already OTP-verified');
@@ -346,9 +421,9 @@ export class OrdersService {
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
 
     await this.prisma.codVerification.upsert({
-      where: { orderId },
+      where: { orderId: order.id },
       create: {
-        orderId,
+        orderId: order.id,
         otpCode,
         isVerified: false,
         expiresAt,
@@ -578,7 +653,11 @@ export class OrdersService {
         orderNumber,
         customerPhone: phone,
       },
-      include: { items: true },
+      include: {
+        items: true,
+        codVerification: true,
+        fulfillments: { orderBy: { createdAt: 'desc' } },
+      },
     });
 
     if (!order) {
