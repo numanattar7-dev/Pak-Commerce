@@ -4,7 +4,7 @@ import Providers from '@/components/Providers';
 import Shell from '@/components/Shell';
 
 export async function generateMetadata(): Promise<Metadata> {
-  // Store-level SEO (Online Store → Preferences) — falls back silently on any error
+  // Store-level SEO (Customize Store → SEO) — falls back silently on any error
   try {
     const base = process.env.NEXT_PUBLIC_API_BASE || 'http://127.0.0.1:4000';
     const res = await fetch(`${base}/store-settings/public/khaadi`, { next: { revalidate: 60 } });

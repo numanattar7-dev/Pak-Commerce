@@ -207,7 +207,7 @@ function OrderStatusInner() {
 
       {!isCancelled && <FlowBar currentIdx={currentIdx} />}
 
-      {/* merchant confirmation message (store settings → checkout) */}
+      {/* merchant confirmation message (Customize Store → Checkout) */}
       {!isCancelled && cfg.checkout.confirmationMsg && (
         <div className="rounded-2xl border border-slate-200 bg-white px-5 py-3.5 mb-6 text-sm text-slate-700 font-medium">
           {cfg.checkout.confirmationMsg}

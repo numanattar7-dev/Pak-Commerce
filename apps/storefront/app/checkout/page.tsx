@@ -44,7 +44,7 @@ export default function CheckoutPage() {
   const { items, subtotal, count, clear, hydrated } = useCart();
   const { customization: cfg } = useStore();
 
-  // merchant-enabled payment methods only (store settings → payments)
+  // merchant-enabled payment methods only (Customize Store → Payments)
   const enabledMethods = PAYMENT_OPTIONS.filter(
     (o) => cfg.payments[o.id as keyof typeof cfg.payments] !== false,
   );
