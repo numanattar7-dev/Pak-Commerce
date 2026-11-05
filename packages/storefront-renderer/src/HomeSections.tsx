@@ -6,7 +6,7 @@
 // and supports click-to-select + outline while editing.
 // ---------------------------------------------------------------------------
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
   ArrowRight,
@@ -19,6 +19,11 @@ import {
 } from 'lucide-react';
 import type { StoreCustomization } from './config';
 import type { PkSection } from './sections';
+import {
+  isAllowedPreviewOrigin,
+  isPreviewSelectMessage,
+  resolvePreviewParentOrigin,
+} from './preview';
 
 export interface HomeProduct {
   id: string;
@@ -42,13 +47,16 @@ const isPreviewFrame = () =>
 
 export default function HomeSections({ cfg, products, loading, renderProduct, resolveImage }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const parentOrigin = useRef<string | null>(null);
 
-  // editor → iframe: highlight the section the merchant is editing
+  // editor → iframe: highlight the section the merchant is editing.
+  // Origin-checked and payload-validated; unknown origins are ignored.
   useEffect(() => {
     const onMessage = (e: MessageEvent) => {
-      const data = e.data;
-      if (!data || data.type !== 'pk-preview-select') return;
-      setSelectedId(typeof data.id === 'string' ? data.id : null);
+      if (!isAllowedPreviewOrigin(e.origin)) return;
+      if (!isPreviewSelectMessage(e.data)) return;
+      parentOrigin.current = resolvePreviewParentOrigin(e.origin);
+      setSelectedId(e.data.id);
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
@@ -60,7 +68,11 @@ export default function HomeSections({ cfg, products, loading, renderProduct, re
     e.stopPropagation();
     setSelectedId(id);
     try {
-      window.parent.postMessage({ type: 'pk-preview-pick', id }, '*');
+      // Reply only to the exact editor origin (learned from pk-preview-select).
+      // Before the parent origin is known, do not broadcast at all.
+      if (parentOrigin.current) {
+        window.parent.postMessage({ type: 'pk-preview-pick', id }, parentOrigin.current);
+      }
     } catch {
       /* parent gone */
     }

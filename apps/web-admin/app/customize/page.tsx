@@ -54,6 +54,7 @@ import {
   ADDABLE_SECTIONS,
   defaultSection,
   defaultBlock,
+  isPreviewPickMessage,
   type PkSection,
   type PkSectionType,
   type PkBlock,
@@ -73,6 +74,15 @@ type StorePageRow = {
 
 const COLOR_PRESETS = ['#059669', '#2563eb', '#7c3aed', '#dc2626', '#ea580c', '#0f172a', '#be185d', '#0d9488'];
 const STOREFRONT_URL = process.env.NEXT_PUBLIC_STOREFRONT_URL || 'http://localhost:3001';
+// Exact origin of the preview iframe — used for all postMessage traffic.
+// Falls back to null when NEXT_PUBLIC_STOREFRONT_URL is not a valid URL.
+const PREVIEW_ORIGIN = (() => {
+  try {
+    return new URL(STOREFRONT_URL).origin;
+  } catch {
+    return null;
+  }
+})();
 const MAX_HISTORY = 80;
 
 type SectionKey =
@@ -163,10 +173,11 @@ export default function ThemeEditor() {
 
   // ── live preview push (debounced) ────────────────────────────────────────
   const sendPreview = useCallback(() => {
+    if (!PREVIEW_ORIGIN) return; // invalid preview origin — skip rather than wildcard
     try {
       iframeRef.current?.contentWindow?.postMessage(
         { type: PREVIEW_MESSAGE_TYPE, config: cfg },
-        '*',
+        PREVIEW_ORIGIN,
       );
     } catch {
       /* iframe not ready */
@@ -314,10 +325,11 @@ export default function ThemeEditor() {
   const homeSections = cfg.home?.sections ?? [];
 
   const postSelection = useCallback(() => {
+    if (!PREVIEW_ORIGIN) return;
     try {
       iframeRef.current?.contentWindow?.postMessage(
         { type: 'pk-preview-select', id: activeSection === 'home' ? activeHomeId : null },
-        '*',
+        PREVIEW_ORIGIN,
       );
     } catch {
       /* iframe not ready */
@@ -329,11 +341,13 @@ export default function ThemeEditor() {
     postSelection();
   }, [postSelection, loaded]);
 
-  // click-to-select inside the preview iframe
+  // click-to-select inside the preview iframe — origin, source and payload validated
   useEffect(() => {
     const onMessage = (e: MessageEvent) => {
-      if (!e.data || e.data.type !== 'pk-preview-pick') return;
-      setActiveHomeId(typeof e.data.id === 'string' ? e.data.id : null);
+      if (!PREVIEW_ORIGIN || e.origin !== PREVIEW_ORIGIN) return;
+      if (iframeRef.current && e.source !== iframeRef.current.contentWindow) return;
+      if (!isPreviewPickMessage(e.data)) return;
+      setActiveHomeId(e.data.id);
       setActiveSection('home');
     };
     window.addEventListener('message', onMessage);
@@ -352,11 +366,15 @@ export default function ThemeEditor() {
   const toggleSection = (id: string) =>
     patchSectionAt(id, (s) => ({ ...s, enabled: !s.enabled }));
 
+  // singular section types can exist at most once — never duplicate them
+  const canDuplicateSection = (s: PkSection) => !SECTION_REGISTRY[s.type].singular;
+
   const duplicateSection = (id: string) =>
     mutateHome((list) => {
       const i = list.findIndex((s) => s.id === id);
       if (i < 0) return list;
       const src = list[i];
+      if (!canDuplicateSection(src)) return list; // Hero, features, featured products, etc.
       const clone: PkSection = {
         ...src,
         id: `sec-${Math.random().toString(36).slice(2, 10)}`,
@@ -1001,7 +1019,16 @@ export default function ThemeEditor() {
                                       <button onClick={() => toggleSection(s.id)} title={s.enabled ? 'Hide section' : 'Show section'} className="p-1 rounded hover:bg-slate-100 text-slate-500">
                                         {s.enabled ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
                                       </button>
-                                      <button onClick={() => duplicateSection(s.id)} title="Duplicate section" className="p-1 rounded hover:bg-slate-100 text-slate-500">
+                                      <button
+                                        onClick={() => duplicateSection(s.id)}
+                                        disabled={!canDuplicateSection(s)}
+                                        title={
+                                          canDuplicateSection(s)
+                                            ? 'Duplicate section'
+                                            : `${SECTION_REGISTRY[s.type].label} is a single-instance section and cannot be duplicated`
+                                        }
+                                        className="p-1 rounded hover:bg-slate-100 text-slate-500 disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed"
+                                      >
                                         <Copy className="w-4 h-4" />
                                       </button>
                                       <button onClick={() => resetSection(s.id)} title="Restore default settings" className="p-1 rounded hover:bg-slate-100 text-slate-500">

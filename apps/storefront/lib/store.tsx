@@ -19,6 +19,7 @@ import {
   DEFAULT_CUSTOMIZATION,
   mergeStoreConfig,
   PREVIEW_MESSAGE_TYPE,
+  isAllowedPreviewOrigin,
 } from '@pak-commerce/storefront-renderer';
 import {
   fetchStoreCustomization,
@@ -82,10 +83,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       try {
         if (!e.data || e.data.type !== PREVIEW_MESSAGE_TYPE) return;
         if (e.origin === window.location.origin) return; // never accept from the storefront's own origin
-        const adminHost = new URL(e.origin).hostname;
-        const sameMachine = adminHost === 'localhost' || adminHost === '127.0.0.1';
-        const trustedDomain = /(^|\.)vercel\.app$/.test(adminHost) || /pakcommerce\.pk$/.test(adminHost);
-        if (!sameMachine && !trustedDomain) return;
+        if (!isAllowedPreviewOrigin(e.origin)) return;
         if (e.data.config && typeof e.data.config === 'object') {
           setCustomization(mergeConfig(DEFAULT_CUSTOMIZATION, e.data.config));
         }
