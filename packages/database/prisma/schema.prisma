@@ -46,6 +46,8 @@ model Tenant {
   themes        Theme[]
   themeAssets   ThemeAsset[]
   themeVersions ThemeVersion[]
+  blogPosts     BlogPost[]
+  storeSettingsVersions StoreSettingsVersion[]
 
   @@map("tenants")
 }
@@ -538,11 +540,26 @@ model StoreSettings {
   id         String   @id @default(uuid())
   tenantId   String   @unique
   tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  configJson String   @default("{}") // full customization config (branding, theme, hero, footer, payments, seo)
+  configJson String   @default("{}") @db.Text // full customization config (branding, theme, hero, footer, payments, seo)
+  draftJson  String   @default("{}") @db.Text // unpublished draft of the customization config (live config stays in configJson)
   updatedAt  DateTime @updatedAt
   createdAt  DateTime @default(now())
 
   @@map("store_settings")
+}
+
+// Reconstructed from verified production schema (Neon backup branch
+// pak-commerce-pre-reconciliation). Do not recreate or re-order — exact columns only.
+model StoreSettingsVersion {
+  id         String   @id @db.Text
+  tenantId   String   @db.Text
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  configJson String   @db.Text
+  label      String?  @db.Text
+  createdAt  DateTime @default(now()) @db.Timestamp(6)
+
+  @@index([tenantId, createdAt])
+  @@map("store_settings_versions")
 }
 
 model StorePage {
@@ -558,6 +575,32 @@ model StorePage {
 
   @@unique([tenantId, slug])
   @@map("store_pages")
+}
+
+// ----------------------------------------------------
+// Reconstructed from verified production schema
+// (Neon backup branch pak-commerce-pre-reconciliation).
+// Exact columns only — do not extend without a migration.
+// ----------------------------------------------------
+
+model BlogPost {
+  id          String   @id @db.Text
+  tenantId    String   @db.Text
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  title       String   @db.Text
+  handle      String   @db.Text
+  excerpt     String   @default("") @db.Text
+  content     String   @default("") @db.Text
+  author      String?  @db.Text
+  imageUrl    String?  @db.Text
+  isPublished Boolean  @default(false)
+  publishedAt DateTime? @db.Timestamp(6)
+  createdAt   DateTime @default(now()) @db.Timestamp(6)
+  updatedAt   DateTime @updatedAt @db.Timestamp(6)
+
+  @@unique([tenantId, handle])
+  @@index([tenantId, isPublished, publishedAt])
+  @@map("blog_posts")
 }
 
 // ----------------------------------------------------
