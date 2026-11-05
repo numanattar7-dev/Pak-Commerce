@@ -10,9 +10,11 @@ import {
   Tag,
   Users,
   CreditCard,
-  Palette,
   Settings,
   Webhook,
+  Globe,
+  FileText,
+  Menu as NavMenuIcon,
   Store,
   LogOut,
   Menu,
@@ -45,7 +47,12 @@ const NAV_GROUPS: NavGroup[] = [
   },
   {
     title: 'Online store',
-    items: [{ href: '/customize', label: 'Customize', icon: Palette }],
+    items: [
+      { href: '/online-store', label: 'Online store', icon: Globe },
+      { href: '/online-store/pages', label: 'Pages', icon: FileText },
+      { href: '/online-store/navigation', label: 'Navigation', icon: NavMenuIcon },
+      { href: '/online-store/preferences', label: 'Preferences', icon: Settings },
+    ],
   },
   {
     title: 'Settings',
@@ -98,11 +105,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     router.replace('/login');
   };
 
+  const exactMatch = ['/', '/online-store'];
   const isActive = (href: string) =>
-    href === '/' ? pathname === '/' : pathname.startsWith(href);
+    exactMatch.includes(href) ? pathname === href : pathname.startsWith(href);
   const currentLabel =
-    ALL_ITEMS.find((n) => (n.href === '/' ? pathname === '/' : pathname.startsWith(n.href)))
-      ?.label ?? 'Admin';
+    ALL_ITEMS.find((n) =>
+      exactMatch.includes(n.href) ? pathname === n.href : pathname.startsWith(n.href),
+    )?.label ?? 'Admin';
 
   return (
     <div className="min-h-screen flex flex-col">
