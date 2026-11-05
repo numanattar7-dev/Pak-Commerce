@@ -27,7 +27,7 @@ export default function HomePage() {
 
   return (
     <div>
-      {/* Hero — fully customizable (Admin → Customize Store) */}
+      {/* Hero — configured from the admin store settings */}
       {cfg.hero.enabled !== false && (
         <section className="bg-gradient-to-r from-[var(--pk-primary-dark)] via-[var(--pk-primary)] to-[var(--pk-accent)] text-white">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-14 md:py-20 grid md:grid-cols-2 gap-10 items-center">
