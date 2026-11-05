@@ -43,6 +43,9 @@ model Tenant {
   integrationSettings IntegrationSetting[]
   storeSettings StoreSettings?
   storePages    StorePage[]
+  themes        Theme[]
+  themeAssets   ThemeAsset[]
+  themeVersions ThemeVersion[]
 
   @@map("tenants")
 }
@@ -555,4 +558,65 @@ model StorePage {
 
   @@unique([tenantId, slug])
   @@map("store_pages")
+}
+
+// ----------------------------------------------------
+// 14. Theme Library — installable, publishable themes
+// (design/layout only; never touches business data)
+// ----------------------------------------------------
+
+enum ThemeStatus {
+  PUBLISHED
+  UNPUBLISHED
+}
+
+model Theme {
+  id              String      @id @default(uuid())
+  tenantId        String
+  tenant          Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name            String
+  status          ThemeStatus @default(UNPUBLISHED)
+  source          String      @default("SYSTEM") // SYSTEM | UPLOAD | DUPLICATE
+  configJson      String      @default("{}")     // full StoreCustomization snapshot (design only)
+  basedOnThemeId  String?                           // provenance when duplicated/imported
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  versions        ThemeVersion[]
+  assets          ThemeAsset[]
+
+  @@index([tenantId, status])
+  @@map("themes")
+}
+
+model ThemeVersion {
+  id             String   @id @default(uuid())
+  themeId        String
+  theme          Theme    @relation(fields: [themeId], references: [id], onDelete: Cascade)
+  tenantId       String
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  versionNumber  Int
+  configJson     String   // snapshot of the theme config at this point in time
+  label          String?  // e.g. "Before publish", "Restored from v2"
+  createdAt      DateTime @default(now())
+
+  @@unique([themeId, versionNumber])
+  @@index([tenantId, themeId])
+  @@map("theme_versions")
+}
+
+model ThemeAsset {
+  id          String   @id @default(uuid())
+  themeId     String
+  theme       Theme    @relation(fields: [themeId], references: [id], onDelete: Cascade)
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  kind        String   // "asset" (image/font shipped in the ZIP)
+  key         String   // object key inside the R2 bucket
+  filename    String   // original filename inside the ZIP
+  bytes       Int
+  createdAt   DateTime @default(now())
+
+  @@index([tenantId, themeId])
+  @@map("theme_assets")
 }

@@ -92,9 +92,7 @@ const NAV_GROUPS: NavGroup[] = [
     id: 'online-store',
     title: 'Online store',
     items: [
-      // The current theme editor ships today; it is replaced by the new
-      // renderer + editor in milestones 3–5.
-      { href: '/customize', label: 'Themes', icon: Palette },
+      { href: '/themes', label: 'Themes', icon: Palette },
       { label: 'Pages', icon: FileText, badge: 'M6', disabled: true },
       { label: 'Navigation', icon: Navigation, badge: 'M6', disabled: true },
       { label: 'Blog posts', icon: Newspaper, badge: 'M6', disabled: true },

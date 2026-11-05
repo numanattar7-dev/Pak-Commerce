@@ -31,10 +31,22 @@ export class StoreSettingsService {
     if (json.length > MAX_CONFIG_SIZE) {
       throw new BadRequestException('Store settings payload too large');
     }
-    const saved = await this.prisma.storeSettings.upsert({
-      where: { tenantId },
-      create: { tenantId, configJson: json },
-      update: { configJson: json },
+    // Keep the PUBLISHED theme in the library in sync with the live editor —
+    // otherwise "published theme" and the storefront would drift apart.
+    const saved = await this.prisma.$transaction(async (tx) => {
+      const upserted = await tx.storeSettings.upsert({
+        where: { tenantId },
+        create: { tenantId, configJson: json },
+        update: { configJson: json },
+      });
+      const published = await tx.theme.findFirst({
+        where: { tenantId, status: 'PUBLISHED' },
+        select: { id: true },
+      });
+      if (published) {
+        await tx.theme.update({ where: { id: published.id }, data: { configJson: json } });
+      }
+      return upserted;
     });
     return { config: this.parse(saved.configJson), updatedAt: saved.updatedAt };
   }

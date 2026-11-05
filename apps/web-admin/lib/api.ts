@@ -29,6 +29,8 @@ export function getApiBase() {
 export class ApiError extends Error {
   status: number;
   detail: string;
+  /** Raw error response body (when provided by the API). */
+  raw?: unknown;
   constructor(status: number, message: string, detail: string) {
     super(message);
     this.status = status;
@@ -56,8 +58,10 @@ export async function api<T = any>(
     if (res.ok) return res;
     let msg = res.statusText;
     let detail = '';
+    let raw: unknown;
     try {
       const body = await res.json();
+      raw = body;
       // NestJS: { message: string | string[], ... } or { statusCode, message }
       const m = body?.message;
       if (m) {
@@ -68,7 +72,9 @@ export async function api<T = any>(
     } catch {
       /* keep statusText */
     }
-    throw new ApiError(res.status, msg, detail);
+    const err = new ApiError(res.status, msg, detail);
+    (err as any).raw = raw;
+    throw err;
   };
 
   try {
@@ -139,11 +145,15 @@ export async function apiUpload<T = any>(path: string, file: File): Promise<T> {
   }
   if (!res.ok) {
     let msg = res.statusText;
+    let raw: unknown;
     try {
       const b = await res.json();
+      raw = b;
       msg = Array.isArray(b?.message) ? b.message.join('; ') : String(b?.message ?? msg);
     } catch {}
-    throw new ApiError(res.status, msg || 'Upload failed', msg);
+    const err = new ApiError(res.status, msg || 'Upload failed', msg);
+    (err as any).raw = raw;
+    throw err;
   }
   return res.json();
 }
