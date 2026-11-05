@@ -6,7 +6,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateStorePageDto, UpdateStorePageDto, UpsertStoreSettingsDto } from './dto';
 
-const MAX_CONFIG_SIZE = 20000;
+const MAX_CONFIG_SIZE = 65536; // 64 KB — rich section/block content needs headroom
 const MAX_PAGE_CONTENT = 20000;
 
 @Injectable()

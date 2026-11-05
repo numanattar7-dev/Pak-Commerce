@@ -20,6 +20,13 @@ import {
   Menu as MenuIcon,
   PanelBottom,
   CreditCard,
+  ChevronRight,
+  ChevronUp,
+  ChevronDown,
+  Copy,
+  GripVertical,
+  RotateCcw,
+  Layers,
   ShoppingBag,
   Search,
   Palette,
@@ -43,6 +50,13 @@ import {
   DEFAULT_CUSTOMIZATION,
   mergeStoreConfig,
   PREVIEW_MESSAGE_TYPE,
+  SECTION_REGISTRY,
+  ADDABLE_SECTIONS,
+  defaultSection,
+  defaultBlock,
+  type PkSection,
+  type PkSectionType,
+  type PkBlock,
 } from '@pak-commerce/storefront-renderer';
 import { api, apiUpload, getApiBase } from '@/lib/api';
 
@@ -62,11 +76,11 @@ const STOREFRONT_URL = process.env.NEXT_PUBLIC_STOREFRONT_URL || 'http://localho
 const MAX_HISTORY = 80;
 
 type SectionKey =
+  | 'home'
   | 'branding'
   | 'theme'
   | 'announcement'
   | 'hero'
-  | 'sections'
   | 'header'
   | 'footer'
   | 'payments'
@@ -74,11 +88,11 @@ type SectionKey =
   | 'seo';
 
 const SECTIONS: Array<{ key: SectionKey; title: string; icon: React.ComponentType<{ className?: string }> }> = [
+  { key: 'home', title: 'Home sections', icon: LayoutGrid },
   { key: 'branding', title: 'Branding', icon: ImageIcon },
   { key: 'theme', title: 'Theme colors', icon: Palette },
   { key: 'announcement', title: 'Announcement bar', icon: Megaphone },
   { key: 'hero', title: 'Hero', icon: Sparkles },
-  { key: 'sections', title: 'Home sections', icon: LayoutGrid },
   { key: 'header', title: 'Header menu', icon: MenuIcon },
   { key: 'footer', title: 'Footer', icon: PanelBottom },
   { key: 'payments', title: 'Payments', icon: CreditCard },
@@ -115,6 +129,13 @@ export default function ThemeEditor() {
   // pages manager (modal)
   const [pages, setPages] = useState<StorePageRow[]>([]);
   const [pageEditing, setPageEditing] = useState<Partial<StorePageRow> | null>(null);
+
+  // home sections — selected row + drag-and-drop reorder
+  const [activeHomeId, setActiveHomeId] = useState<string | null>('home-hero');
+  const [dragHomeIndex, setDragHomeIndex] = useState<number | null>(null);
+  const [dropHomeIndex, setDropHomeIndex] = useState<number | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
+  const [uploadTarget, setUploadTarget] = useState<{ id: string; key: string } | null>(null);
 
   const dirty = JSON.stringify(cfg) !== JSON.stringify(savedCfg);
 
@@ -181,6 +202,10 @@ export default function ThemeEditor() {
     },
     [cfg, commit],
   );
+
+  // legacy cfg.sections keys (featured products / features strip) — kept intact
+  const setLegacySection = (key: 'showFeatures' | 'featuredCount' | 'aboutBlurb', value: unknown) =>
+    commit({ ...cfg, sections: { ...cfg.sections, [key]: value } } as StoreCustomization);
 
   const undo = useCallback(() => {
     if (past.current.length === 0) return;
@@ -284,6 +309,155 @@ export default function ThemeEditor() {
 
   const resolveImg = (src?: string) =>
     src ? (src.startsWith('http') ? src : `${getApiBase()}/${src.replace(/^\/+/, '')}`) : '';
+
+  // ── home sections (add / remove / duplicate / reorder / toggle / reset) ─────
+  const homeSections = cfg.home?.sections ?? [];
+
+  const postSelection = useCallback(() => {
+    try {
+      iframeRef.current?.contentWindow?.postMessage(
+        { type: 'pk-preview-select', id: activeSection === 'home' ? activeHomeId : null },
+        '*',
+      );
+    } catch {
+      /* iframe not ready */
+    }
+  }, [activeSection, activeHomeId]);
+
+  useEffect(() => {
+    if (!loaded) return;
+    postSelection();
+  }, [postSelection, loaded]);
+
+  // click-to-select inside the preview iframe
+  useEffect(() => {
+    const onMessage = (e: MessageEvent) => {
+      if (!e.data || e.data.type !== 'pk-preview-pick') return;
+      setActiveHomeId(typeof e.data.id === 'string' ? e.data.id : null);
+      setActiveSection('home');
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, []);
+
+  const mutateHome = (fn: (list: PkSection[]) => PkSection[]) =>
+    commit({ ...cfg, home: { sections: fn(homeSections) } } as StoreCustomization);
+
+  const patchSectionAt = (id: string, fn: (s: PkSection) => PkSection) =>
+    mutateHome((list) => list.map((s) => (s.id === id ? fn(s) : s)));
+
+  const setSectionSetting = (id: string, key: string, value: unknown) =>
+    patchSectionAt(id, (s) => ({ ...s, settings: { ...s.settings, [key]: value } }));
+
+  const toggleSection = (id: string) =>
+    patchSectionAt(id, (s) => ({ ...s, enabled: !s.enabled }));
+
+  const duplicateSection = (id: string) =>
+    mutateHome((list) => {
+      const i = list.findIndex((s) => s.id === id);
+      if (i < 0) return list;
+      const src = list[i];
+      const clone: PkSection = {
+        ...src,
+        id: `sec-${Math.random().toString(36).slice(2, 10)}`,
+        settings: { ...src.settings },
+        blocks: src.blocks.map((b) => ({
+          ...b,
+          id: `blk-${Math.random().toString(36).slice(2, 10)}`,
+          settings: { ...b.settings },
+        })),
+      };
+      const next = [...list];
+      next.splice(i + 1, 0, clone);
+      return next;
+    });
+
+  const removeSection = (id: string) => {
+    if (!confirm('Remove this section from the homepage?')) return;
+    mutateHome((list) => list.filter((s) => s.id !== id));
+    if (activeHomeId === id) setActiveHomeId(null);
+  };
+
+  const moveSection = (from: number, to: number) =>
+    mutateHome((list) => {
+      if (from === to || from < 0 || to < 0 || to >= list.length) return list;
+      const next = [...list];
+      const [s] = next.splice(from, 1);
+      next.splice(to, 0, s);
+      return next;
+    });
+
+  const resetSection = (id: string) => {
+    const s = homeSections.find((x) => x.id === id);
+    if (!s) return;
+    if (!confirm('Restore this section to its default settings?')) return;
+    const fresh = defaultSection(s.type);
+    patchSectionAt(id, (old) => ({ ...fresh, id: old.id, enabled: old.enabled }));
+  };
+
+  const addSection = (type: PkSectionType) => {
+    const fresh = defaultSection(type);
+    mutateHome((list) => [...list, fresh]);
+    setActiveHomeId(fresh.id);
+    setAddOpen(false);
+  };
+
+  const addBlock = (sid: string) =>
+    patchSectionAt(sid, (s) => ({ ...s, blocks: [...s.blocks, defaultBlock(s.type)] }));
+
+  const duplicateBlock = (sid: string, bid: string) =>
+    patchSectionAt(sid, (s) => {
+      const i = s.blocks.findIndex((b) => b.id === bid);
+      if (i < 0) return s;
+      const src = s.blocks[i];
+      const clone: PkBlock = {
+        ...src,
+        id: `blk-${Math.random().toString(36).slice(2, 10)}`,
+        settings: { ...src.settings },
+      };
+      const blocks = [...s.blocks];
+      blocks.splice(i + 1, 0, clone);
+      return { ...s, blocks };
+    });
+
+  const removeBlock = (sid: string, bid: string) =>
+    patchSectionAt(sid, (s) => ({ ...s, blocks: s.blocks.filter((b) => b.id !== bid) }));
+
+  const toggleBlock = (sid: string, bid: string) =>
+    patchSectionAt(sid, (s) => ({
+      ...s,
+      blocks: s.blocks.map((b) => (b.id === bid ? { ...b, enabled: !b.enabled } : b)),
+    }));
+
+  const moveBlock = (sid: string, from: number, to: number) =>
+    patchSectionAt(sid, (s) => {
+      const blocks = [...s.blocks];
+      if (from === to || to < 0 || to >= blocks.length) return s;
+      const [b] = blocks.splice(from, 1);
+      blocks.splice(to, 0, b);
+      return { ...s, blocks };
+    });
+
+  const setBlockSetting = (sid: string, bid: string, key: string, value: unknown) =>
+    patchSectionAt(sid, (s) => ({
+      ...s,
+      blocks: s.blocks.map((b) =>
+        b.id === bid ? { ...b, settings: { ...b.settings, [key]: value } } : b,
+      ),
+    }));
+
+  const uploadHomeImage = async (sid: string, key: string, file?: File | null) => {
+    if (!file) return;
+    setBusy(true);
+    try {
+      const res = await apiUpload<{ url: string }>('/products/upload-image', file);
+      setSectionSetting(sid, key, res.url);
+    } catch (e: any) {
+      setError(e?.detail || e?.message || 'Upload failed');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   // ── pages CRUD ────────────────────────────────────────────────────────────
   const savePage = async () => {
@@ -389,6 +563,88 @@ export default function ThemeEditor() {
     </label>
   );
 
+  // ── generic field renderers for registry-driven sections/blocks ──────────
+  const renderHomeField = (s: PkSection, f: import('@pak-commerce/storefront-renderer').FieldDef) => {
+    const value = (s.settings as Record<string, unknown>)[f.key];
+    const setv = (v: unknown) => setSectionSetting(s.id, f.key, v);
+    switch (f.type) {
+      case 'text':
+        return <TextField key={f.key} title={f.label} value={String(value ?? '')} placeholder={f.placeholder} onChange={setv} />;
+      case 'textarea':
+        return <TextField key={f.key} title={f.label} value={String(value ?? '')} placeholder={f.placeholder} area onChange={setv} />;
+      case 'number':
+        return (
+          <Field key={f.key} title={f.label}>
+            <input
+              type="number"
+              value={String(value ?? '')}
+              onChange={(e) => setv(Number(e.target.value) || 0)}
+              className="w-24 rounded-lg border border-slate-300 px-3 py-[7px] text-[13px] outline-none focus:border-slate-900"
+            />
+          </Field>
+        );
+      case 'toggle':
+        return <Toggle key={f.key} title={f.label} checked={value !== false} onChange={setv} />;
+      case 'select':
+        return (
+          <Field key={f.key} title={f.label}>
+            <select value={String(value ?? '')} onChange={(e) => setv(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-[7px] text-[13px] outline-none focus:border-slate-900">
+              {(f.options ?? []).map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+          </Field>
+        );
+      case 'image': {
+        const preview = resolveImg(String(value ?? ''));
+        return (
+          <Field key={f.key} title={f.label}>
+            <div className="flex items-center gap-2 flex-wrap">
+              {preview && (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img src={preview} alt="" className="w-16 h-12 rounded-md object-cover border border-slate-200" />
+              )}
+              <button
+                onClick={() => {
+                  setUploadTarget({ id: s.id, key: f.key });
+                  setTimeout(() => document.getElementById('home-image-upload')?.click(), 0);
+                }}
+                className="text-xs font-medium border border-slate-300 rounded-lg px-2.5 py-1.5 hover:bg-slate-50"
+              >
+                <Upload className="w-3.5 h-3.5 inline mr-1" /> Upload
+              </button>
+              {value ? (
+                <button onClick={() => setv('')} className="text-xs text-red-600 hover:text-red-700">Remove</button>
+              ) : null}
+            </div>
+          </Field>
+        );
+      }
+      default:
+        return null;
+    }
+  };
+
+  const renderBlockField = (sid: string, bid: string, f: import('@pak-commerce/storefront-renderer').FieldDef, value: unknown) => {
+    const setv = (v: unknown) => setBlockSetting(sid, bid, f.key, v);
+    switch (f.type) {
+      case 'text':
+        return <TextField key={f.key} title={f.label} value={String(value ?? '')} placeholder={f.placeholder} onChange={setv} />;
+      case 'textarea':
+        return <TextField key={f.key} title={f.label} value={String(value ?? '')} placeholder={f.placeholder} area onChange={setv} />;
+      case 'number':
+        return (
+          <Field key={f.key} title={f.label}>
+            <input type="number" value={String(value ?? '')} onChange={(e) => setv(Number(e.target.value) || 0)} className="w-24 rounded-lg border border-slate-300 px-3 py-[7px] text-[13px] outline-none focus:border-slate-900" />
+          </Field>
+        );
+      case 'toggle':
+        return <Toggle key={f.key} title={f.label} checked={value !== false} onChange={setv} />;
+      default:
+        return null;
+    }
+  };
+
   const canUndo = past.current.length > 0;
   const canRedo = future.current.length > 0;
 
@@ -414,6 +670,17 @@ export default function ThemeEditor() {
 
   return (
     <div className="h-full flex flex-col bg-[#ececee]">
+      <input
+        type="file"
+        accept="image/*"
+        hidden
+        id="home-image-upload"
+        onChange={(e) => {
+          if (uploadTarget) uploadHomeImage(uploadTarget.id, uploadTarget.key, e.target.files?.[0]);
+          setUploadTarget(null);
+          e.target.value = '';
+        }}
+      />
       {/* ── top toolbar ── */}
       <header className="h-12 bg-[#1a1a1a] text-white flex items-center justify-between px-2 sm:px-3 shrink-0 z-30 gap-2">
         <div className="flex items-center gap-1.5 min-w-0">
@@ -652,19 +919,174 @@ export default function ThemeEditor() {
                             </>
                           )}
 
-                          {/* ---- HOME SECTIONS ---- */}
-                          {key === 'sections' && (
-                            <>
-                              <Toggle title="Feature highlights strip" checked={cfg.sections.showFeatures !== false} onChange={(v) => set('sections', 'showFeatures', v)} />
-                              <Field title="Featured products shown">
-                                <input
-                                  value={String(cfg.sections.featuredCount ?? 8)}
-                                  onChange={(e) => set('sections', 'featuredCount', Number(e.target.value.replace(/\D/g, '')) || 8)}
-                                  className="w-20 rounded-lg border border-slate-300 px-3 py-[7px] text-[13px] outline-none focus:border-slate-900"
-                                />
-                              </Field>
-                              <TextField title="Home blurb (optional)" value={cfg.sections.aboutBlurb || ''} onChange={(v) => set('sections', 'aboutBlurb', v)} />
-                            </>
+                          {/* ---- HOME SECTIONS (add / remove / duplicate / reorder / blocks) ---- */}
+                          {key === 'home' && (
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="text-[10px] font-medium text-slate-400">Drag to reorder · click to edit</p>
+                                <div className="relative">
+                                  <button
+                                    onClick={() => setAddOpen((v) => !v)}
+                                    className="flex items-center gap-1 text-[11px] font-bold text-slate-700 border border-slate-300 rounded-lg px-2 py-1.5 hover:bg-slate-50 transition"
+                                  >
+                                    <Layers className="w-3.5 h-3.5" /> Add section
+                                  </button>
+                                  {addOpen && (
+                                    <div className="absolute right-0 z-20 mt-1 w-64 bg-white border border-slate-200 rounded-xl shadow-xl p-1.5 max-h-80 overflow-y-auto">
+                                      {ADDABLE_SECTIONS.map((t) => {
+                                        const def = SECTION_REGISTRY[t];
+                                        const used = def.singular && homeSections.some((s) => s.type === t);
+                                        return (
+                                          <button
+                                            key={t}
+                                            disabled={used}
+                                            onClick={() => addSection(t)}
+                                            className={`w-full text-left px-2.5 py-2 rounded-lg transition ${used ? 'opacity-40 cursor-not-allowed' : 'hover:bg-slate-50'}`}
+                                          >
+                                            <span className="block text-[12px] font-semibold text-slate-800">
+                                              {def.label}
+                                              {used && <span className="text-[9px] font-bold text-slate-400 uppercase ml-1.5 align-middle">Added</span>}
+                                            </span>
+                                            <span className="block text-[10px] text-slate-500 leading-snug mt-0.5">{def.description}</span>
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+
+                              {homeSections.length === 0 && (
+                                <p className="text-[12px] text-slate-400 border border-dashed border-slate-200 rounded-lg p-4 text-center">
+                                  No sections yet — add your first one.
+                                </p>
+                              )}
+
+                              {homeSections.map((s, i) => {
+                                const def = SECTION_REGISTRY[s.type];
+                                const open = activeHomeId === s.id;
+                                return (
+                                  <div
+                                    key={s.id}
+                                    draggable
+                                    onDragStart={() => setDragHomeIndex(i)}
+                                    onDragOver={(e) => {
+                                      e.preventDefault();
+                                      setDropHomeIndex(i);
+                                    }}
+                                    onDrop={() => {
+                                      if (dragHomeIndex !== null) moveSection(dragHomeIndex, i);
+                                      setDragHomeIndex(null);
+                                      setDropHomeIndex(null);
+                                    }}
+                                    onDragEnd={() => {
+                                      setDragHomeIndex(null);
+                                      setDropHomeIndex(null);
+                                    }}
+                                    className={`rounded-xl border bg-white overflow-hidden transition ${
+                                      open ? 'border-slate-900 ring-1 ring-slate-900/10' : 'border-slate-200'
+                                    } ${dropHomeIndex === i && dragHomeIndex !== i ? 'border-t-2 border-t-slate-900' : ''}`}
+                                  >
+                                    <div className="flex items-center gap-1 px-2 py-1.5">
+                                      <GripVertical className="w-4 h-4 text-slate-300 cursor-grab shrink-0" />
+                                      <button
+                                        onClick={() => setActiveHomeId(open ? null : s.id)}
+                                        aria-expanded={open}
+                                        className="flex items-center gap-1.5 flex-1 min-w-0 text-left py-1"
+                                      >
+                                        <ChevronRight className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-150 ${open ? 'rotate-90' : ''}`} />
+                                        <span className="text-[12px] font-semibold text-slate-800 truncate">{def.label}</span>
+                                        {!s.enabled && <span className="text-[9px] font-bold uppercase text-slate-400">Hidden</span>}
+                                      </button>
+                                      <button onClick={() => toggleSection(s.id)} title={s.enabled ? 'Hide section' : 'Show section'} className="p-1 rounded hover:bg-slate-100 text-slate-500">
+                                        {s.enabled ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                                      </button>
+                                      <button onClick={() => duplicateSection(s.id)} title="Duplicate section" className="p-1 rounded hover:bg-slate-100 text-slate-500">
+                                        <Copy className="w-4 h-4" />
+                                      </button>
+                                      <button onClick={() => resetSection(s.id)} title="Restore default settings" className="p-1 rounded hover:bg-slate-100 text-slate-500">
+                                        <RotateCcw className="w-4 h-4" />
+                                      </button>
+                                      <button onClick={() => removeSection(s.id)} title="Remove section" className="p-1 rounded hover:bg-red-50 text-slate-400 hover:text-red-600">
+                                        <Trash2 className="w-4 h-4" />
+                                      </button>
+                                    </div>
+
+                                    {open && (
+                                      <div className="px-3 pb-3 pt-2 border-t border-slate-100 space-y-3">
+                                        {def.settings.length === 0 && (
+                                          <p className="text-[10px] text-slate-400 leading-snug">
+                                            Content for this section is edited in its own panel (see “Hero” / the featured-product fields below).
+                                          </p>
+                                        )}
+                                        {def.settings.map((f) => renderHomeField(s, f))}
+                                        {s.type === 'features' && (
+                                          <Toggle title="Feature highlights strip" checked={cfg.sections.showFeatures !== false} onChange={(v) => setLegacySection('showFeatures', v)} />
+                                        )}
+                                        {s.type === 'featuredProducts' && (
+                                          <>
+                                            <Field title="Featured products shown">
+                                              <input
+                                                value={String(cfg.sections.featuredCount ?? 8)}
+                                                onChange={(e) => setLegacySection('featuredCount', Number(e.target.value.replace(/\D/g, '')) || 8)}
+                                                className="w-20 rounded-lg border border-slate-300 px-3 py-[7px] text-[13px] outline-none focus:border-slate-900"
+                                              />
+                                            </Field>
+                                            <TextField title="Home blurb (optional)" value={cfg.sections.aboutBlurb || ''} onChange={(v) => setLegacySection('aboutBlurb', v)} />
+                                          </>
+                                        )}
+
+                                        {def.block && (
+                                          <div className="space-y-1.5">
+                                            <div className="flex items-center justify-between">
+                                              <p className="text-[11px] font-medium text-slate-500">
+                                                {def.block.label}s ({s.blocks.filter((b) => b.enabled).length}/{s.blocks.length} visible)
+                                              </p>
+                                              <button onClick={() => addBlock(s.id)} className="text-[11px] font-semibold text-slate-600 hover:text-slate-900 flex items-center gap-1">
+                                                <Plus className="w-3.5 h-3.5" /> Add {def.block.singularLabel}
+                                              </button>
+                                            </div>
+                                            {s.blocks.map((b, bi) => (
+                                              <div key={b.id} className="rounded-lg border border-slate-200 overflow-hidden">
+                                                <div className="flex items-center gap-1 px-2 py-1.5 bg-slate-50">
+                                                  <span className="text-[9px] font-mono text-slate-400 w-4 text-center">{bi + 1}</span>
+                                                  <span className="flex-1 text-[11px] font-semibold text-slate-700 truncate">
+                                                    {String(b.settings.question || b.settings.title || `${def.block!.singularLabel} ${bi + 1}`)}
+                                                  </span>
+                                                  <button onClick={() => moveBlock(s.id, bi, bi - 1)} disabled={bi === 0} title="Move up" className="p-1 rounded hover:bg-slate-200 text-slate-400 disabled:opacity-30">
+                                                    <ChevronUp className="w-3.5 h-3.5" />
+                                                  </button>
+                                                  <button onClick={() => moveBlock(s.id, bi, bi + 1)} disabled={bi === s.blocks.length - 1} title="Move down" className="p-1 rounded hover:bg-slate-200 text-slate-400 disabled:opacity-30">
+                                                    <ChevronDown className="w-3.5 h-3.5" />
+                                                  </button>
+                                                  <button onClick={() => toggleBlock(s.id, b.id)} title={b.enabled ? 'Hide question' : 'Show question'} className="p-1 rounded hover:bg-slate-200 text-slate-400">
+                                                    {b.enabled ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+                                                  </button>
+                                                  <button onClick={() => duplicateBlock(s.id, b.id)} title="Duplicate question" className="p-1 rounded hover:bg-slate-200 text-slate-400">
+                                                    <Copy className="w-3.5 h-3.5" />
+                                                  </button>
+                                                  <button onClick={() => removeBlock(s.id, b.id)} title="Remove question" className="p-1 rounded hover:bg-red-50 text-slate-400 hover:text-red-600">
+                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                  </button>
+                                                </div>
+                                                <div className="px-2 py-2 space-y-2 border-t border-slate-100">
+                                                  {def.block.fields.map((f) => renderBlockField(s.id, b.id, f, (b.settings as Record<string, unknown>)[f.key]))}
+                                                </div>
+                                              </div>
+                                            ))}
+                                            {s.blocks.length === 0 && (
+                                              <p className="text-[11px] text-slate-400 text-center py-2 border border-dashed border-slate-200 rounded-lg">
+                                                No {def.block.singularLabel}s yet.
+                                              </p>
+                                            )}
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
                           )}
 
                           {/* ---- HEADER MENU ---- */}
@@ -809,7 +1231,10 @@ export default function ThemeEditor() {
               ref={iframeRef}
               src={`${STOREFRONT_URL}/?preview=1`}
               title="Storefront preview"
-              onLoad={sendPreview}
+              onLoad={() => {
+                sendPreview();
+                postSelection();
+              }}
               className="w-full h-full border-0 block"
             />
           </div>

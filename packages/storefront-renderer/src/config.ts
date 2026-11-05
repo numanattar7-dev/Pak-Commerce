@@ -5,6 +5,9 @@
 // consume this module — do not duplicate these types or defaults.
 // ---------------------------------------------------------------------------
 
+import type { PkSection } from './sections';
+import { DEFAULT_HOME_SECTIONS } from './sections';
+
 export type LinkRow = { label: string; href: string };
 
 export type StoreCustomization = {
@@ -21,6 +24,7 @@ export type StoreCustomization = {
     ctaLink?: string;
   };
   sections: { showFeatures?: boolean; featuredCount?: number; aboutBlurb?: string };
+  home: { sections: PkSection[] };
   header: { menuLinks?: LinkRow[] };
   footer: {
     aboutText?: string;
@@ -51,6 +55,9 @@ export const DEFAULT_CUSTOMIZATION: StoreCustomization = {
     ctaLink: '/products',
   },
   sections: { showFeatures: true, featuredCount: 8, aboutBlurb: '' },
+  home: {
+    sections: DEFAULT_HOME_SECTIONS.map((s) => ({ ...s, settings: { ...s.settings }, blocks: s.blocks.map((b) => ({ ...b, settings: { ...b.settings } })) })),
+  },
   header: { menuLinks: [] },
   footer: {
     aboutText:
