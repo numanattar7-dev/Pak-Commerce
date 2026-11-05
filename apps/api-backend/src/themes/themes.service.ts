@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   Logger,
   NotFoundException,
@@ -195,34 +196,58 @@ export class ThemesService {
     return { deleted: true };
   }
 
+  /**
+   * Publish steps to run INSIDE an interactive transaction:
+   * unpublish all tenant themes → publish this one → sync StoreSettings
+   * → append a "Published" version snapshot. All-or-nothing.
+   */
+  private async publishInTx(tx: any, tenantId: string, theme: { id: string; configJson: string }) {
+    await tx.theme.updateMany({ where: { tenantId, status: 'PUBLISHED' }, data: { status: 'UNPUBLISHED' } });
+    await tx.theme.update({ where: { id: theme.id }, data: { status: 'PUBLISHED' } });
+    await tx.storeSettings.upsert({
+      where: { tenantId },
+      create: { tenantId, configJson: theme.configJson },
+      update: { configJson: theme.configJson },
+    });
+    const latest = await tx.themeVersion.findFirst({
+      where: { themeId: theme.id },
+      orderBy: { versionNumber: 'desc' },
+      select: { versionNumber: true },
+    });
+    const versionNumber = (latest?.versionNumber ?? 0) + 1;
+    await tx.themeVersion.create({
+      data: {
+        themeId: theme.id,
+        tenantId,
+        versionNumber,
+        configJson: theme.configJson,
+        label: 'Published',
+      },
+    });
+  }
+
+  private isUniqueViolation(e: any): boolean {
+    const code = e?.code ?? e?.meta?.code;
+    const target = JSON.stringify(e?.meta?.target ?? '');
+    return code === 'P2002' && /one_published_per_tenant|status/.test(target);
+  }
+
   /** Publish a theme: the storefront's live design switches to it. Business data untouched. */
   async publish(tenantId: string, id: string) {
     const theme = await this.prisma.theme.findFirst({ where: { id, tenantId } });
     if (!theme) throw new NotFoundException('Theme not found');
-    await this.prisma.$transaction(async (tx) => {
-      await tx.theme.updateMany({ where: { tenantId, status: 'PUBLISHED' }, data: { status: 'UNPUBLISHED' } });
-      await tx.theme.update({ where: { id: theme.id }, data: { status: 'PUBLISHED' } });
-      await tx.storeSettings.upsert({
-        where: { tenantId },
-        create: { tenantId, configJson: theme.configJson },
-        update: { configJson: theme.configJson },
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        await this.publishInTx(tx, tenantId, theme);
       });
-      const latest = await tx.themeVersion.findFirst({
-        where: { themeId: theme.id },
-        orderBy: { versionNumber: 'desc' },
-        select: { versionNumber: true },
-      });
-      const versionNumber = (latest?.versionNumber ?? 0) + 1;
-      await tx.themeVersion.create({
-        data: {
-          themeId: theme.id,
-          tenantId,
-          versionNumber,
-          configJson: theme.configJson,
-          label: 'Published',
-        },
-      });
-    });
+    } catch (e: any) {
+      if (this.isUniqueViolation(e)) {
+        throw new ConflictException(
+          'Another theme was published for this store at the same time. Reload and try again.',
+        );
+      }
+      throw e;
+    }
     return { published: true, id: theme.id };
   }
 
@@ -244,21 +269,57 @@ export class ThemesService {
     return { versionNumber: v.versionNumber };
   }
 
-  /** Restore an earlier version — auditable (creates a NEW version, never rewrites history). */
+  /** Restore an earlier version — auditable. Fully atomic: config restore,
+   *  audit version, publish and StoreSettings sync all commit or all roll back. */
   async restoreVersion(tenantId: string, id: string, versionNumber: number, publish: boolean) {
-    const version = await this.prisma.themeVersion.findFirst({
-      where: { themeId: id, tenantId, versionNumber },
-    });
-    if (!version) throw new NotFoundException(`Version ${versionNumber} not found`);
-    await this.prisma.theme.update({
-      where: { id },
-      data: { configJson: version.configJson },
-    });
-    await this.createVersion(tenantId, id, `Restored from v${versionNumber}`);
-    if (publish) {
-      await this.publish(tenantId, id);
+    try {
+      const result = await this.prisma.$transaction(async (tx) => {
+        const theme = await tx.theme.findFirst({ where: { id, tenantId } });
+        if (!theme) throw new NotFoundException('Theme not found');
+        const version = await tx.themeVersion.findFirst({
+          where: { themeId: id, tenantId, versionNumber },
+        });
+        if (!version) throw new NotFoundException(`Version ${versionNumber} not found`);
+
+        // 1) restore config into the theme
+        await tx.theme.update({
+          where: { id: theme.id },
+          data: { configJson: version.configJson },
+        });
+
+        // 2) append the audit snapshot
+        const latest = await tx.themeVersion.findFirst({
+          where: { themeId: theme.id },
+          orderBy: { versionNumber: 'desc' },
+          select: { versionNumber: true },
+        });
+        let n = (latest?.versionNumber ?? 0) + 1;
+        await tx.themeVersion.create({
+          data: {
+            themeId: theme.id,
+            tenantId,
+            versionNumber: n,
+            configJson: version.configJson,
+            label: `Restored from v${versionNumber}`,
+          },
+        });
+
+        // 3) optionally publish the restored theme (unpublish others, sync StoreSettings, snapshot)
+        if (publish) {
+          await this.publishInTx(tx, tenantId, { id: theme.id, configJson: version.configJson });
+        }
+
+        return { restored: true, from: versionNumber, publish };
+      });
+      return result;
+    } catch (e: any) {
+      if (this.isUniqueViolation(e)) {
+        throw new ConflictException(
+          'Another theme was published for this store at the same time. Reload and try again.',
+        );
+      }
+      throw e;
     }
-    return { restored: true, from: versionNumber };
   }
 
   // ─────────────────────────────────────────────────────────────────────
