@@ -3,6 +3,7 @@
 // ---------------------------------------------------------------------------
 // Store context — loads the tenant catalog + customization ONCE and shares it
 // across pages (products, categories, store identity, theme, content).
+// Theme types/defaults come from the shared renderer package — do not edit here.
 // ---------------------------------------------------------------------------
 
 import React, {
@@ -15,66 +16,23 @@ import React, {
 } from 'react';
 import {
   StoreCustomization,
-  StoreProduct,
+  DEFAULT_CUSTOMIZATION,
+  mergeStoreConfig,
+  PREVIEW_MESSAGE_TYPE,
+} from '@pak-commerce/storefront-renderer';
+import {
   fetchStoreCustomization,
   fetchStoreProducts,
   getApiBase,
   mapStoreProduct,
+  StoreProduct,
 } from './api';
 
 type StoreInfo = { name: string; subdomain: string };
 
-/** Defaults mirror the original hardcoded storefront — stores look identical until customized. */
-export const DEFAULT_CUSTOMIZATION: StoreCustomization = {
-  branding: { logoUrl: '', faviconUrl: '', tagline: '' },
-  theme: { primary: '#059669', accent: '#0d9488' },
-  announcement: {
-    enabled: true,
-    text: 'Nationwide Delivery to 100+ Cities · Cash on Delivery Available · 7-Day Exchange',
-  },
-  hero: {
-    enabled: true,
-    badge: 'New Season · Summer Collection 2026',
-    title: "Pakistan's Premium Unstitched Collection",
-    subtitle:
-      'Authentic lawn, cotton jacquard and festive silks with nationwide delivery — pay at your doorstep with Cash on Delivery.',
-    imageUrl: '',
-    ctaText: 'Shop the Collection',
-    ctaLink: '/products',
-  },
-  sections: { showFeatures: true, featuredCount: 8, aboutBlurb: '' },
-  header: { menuLinks: [] },
-  footer: {
-    aboutText:
-      'Premium Pakistani unstitched fabrics — lawn, cotton jacquard and festive silks, delivered nationwide with COD.',
-    quickLinks: [],
-    social: { whatsapp: '', instagram: '', facebook: '', tiktok: '' },
-    copyright: '',
-  },
-  payments: { COD: true, IBFT: true, RAAST: true, JAZZCASH: true, EASYPAISA: true },
-  checkout: { confirmationMsg: '', allowNotes: true },
-  seo: { metaTitle: '', metaDescription: '' },
-};
+export { DEFAULT_CUSTOMIZATION };
 
-/** Shallow-merge top-level sections so merchants only override what they set. */
-function mergeConfig(
-  base: StoreCustomization,
-  override: Record<string, unknown> | undefined,
-): StoreCustomization {
-  if (!override) return base;
-  const out: Record<string, unknown> = {};
-  for (const key of Object.keys(base)) {
-    const o = override[key];
-    if (o === undefined || o === null) {
-      out[key] = (base as Record<string, unknown>)[key];
-    } else if (typeof o === 'object' && !Array.isArray(o)) {
-      out[key] = { ...((base as Record<string, unknown>)[key] as object), ...(o as object) };
-    } else {
-      out[key] = o;
-    }
-  }
-  return out as unknown as StoreCustomization;
-}
+const mergeConfig = mergeStoreConfig;
 
 type StoreContextValue = {
   store: StoreInfo | null;
@@ -122,7 +80,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const onMessage = (e: MessageEvent) => {
       try {
-        if (!e.data || e.data.type !== 'pk-preview-config') return;
+        if (!e.data || e.data.type !== PREVIEW_MESSAGE_TYPE) return;
         if (e.origin === window.location.origin) return; // never accept from the storefront's own origin
         const adminHost = new URL(e.origin).hostname;
         const sameMachine = adminHost === 'localhost' || adminHost === '127.0.0.1';

@@ -1,5 +1,13 @@
 'use client';
 
+// ---------------------------------------------------------------------------
+// Themes — Visual theme editor (Milestone 3 foundation)
+// Three-part Shopify-style layout:
+//   left  → collapsible customization panel (compact sections)
+//   right → live storefront preview (desktop / tablet / mobile, real renderer)
+// Toolbar → theme name, save status, undo/redo, device switch, preview, save
+// ---------------------------------------------------------------------------
+
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
@@ -22,39 +30,23 @@ import {
   Eye,
   EyeOff,
   Monitor,
+  Tablet,
   Smartphone,
   ExternalLink,
   Loader2,
+  Undo2,
+  Redo2,
+  PanelLeft,
 } from 'lucide-react';
+import {
+  StoreCustomization,
+  DEFAULT_CUSTOMIZATION,
+  mergeStoreConfig,
+  PREVIEW_MESSAGE_TYPE,
+} from '@pak-commerce/storefront-renderer';
 import { api, apiUpload, getApiBase } from '@/lib/api';
 
 type LinkRow = { label: string; href: string };
-
-type Customization = {
-  branding: { logoUrl?: string; faviconUrl?: string; tagline?: string };
-  theme: { primary?: string; accent?: string };
-  announcement: { enabled?: boolean; text?: string };
-  hero: {
-    enabled?: boolean;
-    badge?: string;
-    title?: string;
-    subtitle?: string;
-    imageUrl?: string;
-    ctaText?: string;
-    ctaLink?: string;
-  };
-  sections: { showFeatures?: boolean; featuredCount?: number; aboutBlurb?: string };
-  header: { menuLinks?: LinkRow[] };
-  footer: {
-    aboutText?: string;
-    quickLinks?: LinkRow[];
-    social?: { whatsapp?: string; instagram?: string; facebook?: string; tiktok?: string };
-    copyright?: string;
-  };
-  payments: { COD?: boolean; IBFT?: boolean; RAAST?: boolean; JAZZCASH?: boolean; EASYPAISA?: boolean };
-  checkout: { confirmationMsg?: string; allowNotes?: boolean };
-  seo: { metaTitle?: string; metaDescription?: string };
-};
 
 type StorePageRow = {
   id: string;
@@ -65,40 +57,9 @@ type StorePageRow = {
   updatedAt: string;
 };
 
-const DEFAULTS: Customization = {
-  branding: { logoUrl: '', faviconUrl: '', tagline: '' },
-  theme: { primary: '#059669', accent: '#0d9488' },
-  announcement: {
-    enabled: true,
-    text: 'Nationwide Delivery to 100+ Cities · Cash on Delivery Available · 7-Day Exchange',
-  },
-  hero: {
-    enabled: true,
-    badge: 'New Season · Summer Collection 2026',
-    title: "Pakistan's Premium Unstitched Collection",
-    subtitle:
-      'Authentic lawn, cotton jacquard and festive silks with nationwide delivery — pay at your doorstep with Cash on Delivery.',
-    imageUrl: '',
-    ctaText: 'Shop the Collection',
-    ctaLink: '/products',
-  },
-  sections: { showFeatures: true, featuredCount: 8, aboutBlurb: '' },
-  header: { menuLinks: [] },
-  footer: {
-    aboutText:
-      'Premium Pakistani unstitched fabrics — lawn, cotton jacquard and festive silks, delivered nationwide with COD.',
-    quickLinks: [],
-    social: { whatsapp: '', instagram: '', facebook: '', tiktok: '' },
-    copyright: '',
-  },
-  payments: { COD: true, IBFT: true, RAAST: true, JAZZCASH: true, EASYPAISA: true },
-  checkout: { confirmationMsg: '', allowNotes: true },
-  seo: { metaTitle: '', metaDescription: '' },
-};
-
 const COLOR_PRESETS = ['#059669', '#2563eb', '#7c3aed', '#dc2626', '#ea580c', '#0f172a', '#be185d', '#0d9488'];
-
 const STOREFRONT_URL = process.env.NEXT_PUBLIC_STOREFRONT_URL || 'http://localhost:3001';
+const MAX_HISTORY = 80;
 
 type SectionKey =
   | 'branding'
@@ -125,36 +86,48 @@ const SECTIONS: Array<{ key: SectionKey; title: string; icon: React.ComponentTyp
   { key: 'seo', title: 'SEO', icon: Search },
 ];
 
-export default function CustomizeEditor() {
+type SaveState = 'idle' | 'saving' | 'saved' | 'error';
+type Device = 'desktop' | 'tablet' | 'mobile';
+
+export default function ThemeEditor() {
   const router = useRouter();
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const logoInput = useRef<HTMLInputElement>(null);
   const faviconInput = useRef<HTMLInputElement>(null);
   const heroInput = useRef<HTMLInputElement>(null);
 
-  const [cfg, setCfg] = useState<Customization>(DEFAULTS);
+  const [cfg, setCfg] = useState<StoreCustomization>(DEFAULT_CUSTOMIZATION);
+  const [savedCfg, setSavedCfg] = useState<StoreCustomization>(DEFAULT_CUSTOMIZATION);
   const [loaded, setLoaded] = useState(false);
-  const [activeSection, setActiveSection] = useState<SectionKey>('theme');
-  const [device, setDevice] = useState<'desktop' | 'mobile'>('desktop');
+  const [activeSection, setActiveSection] = useState<SectionKey | ''>('hero');
+  const [leftOpen, setLeftOpen] = useState(true);
+  const [device, setDevice] = useState<Device>('desktop');
   const [busy, setBusy] = useState(false);
+  const [saveState, setSaveState] = useState<SaveState>('idle');
+  const [savedAt, setSavedAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [savedTick, setSavedTick] = useState(false);
+
+  // undo/redo history (snapshots of the full config)
+  const past = useRef<StoreCustomization[]>([]);
+  const future = useRef<StoreCustomization[]>([]);
+  const [, setHistTick] = useState(0);
 
   // pages manager (modal)
   const [pages, setPages] = useState<StorePageRow[]>([]);
   const [pageEditing, setPageEditing] = useState<Partial<StorePageRow> | null>(null);
 
+  const dirty = JSON.stringify(cfg) !== JSON.stringify(savedCfg);
+
+  // ── load settings + pages ─────────────────────────────────────────────────
   const load = useCallback(async () => {
     try {
       const [s, p] = await Promise.all([
         api<{ config: Record<string, unknown> }>('/store-settings'),
         api<StorePageRow[]>('/store-pages'),
       ]);
-      const merged: Record<string, unknown> = {};
-      for (const key of Object.keys(DEFAULTS)) {
-        merged[key] = { ...(DEFAULTS as any)[key], ...((s.config as any)?.[key] ?? {}) };
-      }
-      setCfg(merged as unknown as Customization);
+      const merged = mergeStoreConfig(DEFAULT_CUSTOMIZATION, s.config);
+      setCfg(merged);
+      setSavedCfg(merged);
       setPages(Array.isArray(p) ? p : []);
     } catch (e: any) {
       setError(e?.message || 'Failed to load settings');
@@ -167,44 +140,133 @@ export default function CustomizeEditor() {
     load();
   }, [load]);
 
-  // LIVE PREVIEW — push the draft config into the storefront iframe on every
-  // change AND whenever the iframe (re)loads, so a fresh preview picks up the
-  // latest draft instead of flashing server defaults.
+  // ── live preview push (debounced) ────────────────────────────────────────
   const sendPreview = useCallback(() => {
     try {
       iframeRef.current?.contentWindow?.postMessage(
-        { type: 'pk-preview-config', config: cfg },
+        { type: PREVIEW_MESSAGE_TYPE, config: cfg },
         '*',
       );
     } catch {
       /* iframe not ready */
     }
   }, [cfg]);
+
   useEffect(() => {
     if (!loaded) return;
-    sendPreview();
+    const t = setTimeout(sendPreview, 120);
+    return () => clearTimeout(t);
   }, [cfg, loaded, sendPreview]);
 
-  const set = (section: SectionKey, key: string, value: unknown) => {
-    setCfg((c) => ({
-      ...c,
-      [section]: { ...(c[section] as Record<string, unknown>), [key]: value },
-    }));
+  // ── history helpers ───────────────────────────────────────────────────────
+  const commit = useCallback(
+    (next: StoreCustomization, record = true) => {
+      if (record) {
+        past.current.push(cfg);
+        if (past.current.length > MAX_HISTORY) past.current.shift();
+        future.current = [];
+        setHistTick((t) => t + 1);
+      }
+      setCfg(next);
+    },
+    [cfg],
+  );
+
+  const set = useCallback(
+    (section: SectionKey, key: string, value: unknown) => {
+      commit({
+        ...cfg,
+        [section]: { ...(cfg[section] as Record<string, unknown>), [key]: value },
+      } as StoreCustomization);
+    },
+    [cfg, commit],
+  );
+
+  const undo = useCallback(() => {
+    if (past.current.length === 0) return;
+    const prev = past.current.pop()!;
+    future.current.unshift(cfg);
+    setCfg(prev);
+    setHistTick((t) => t + 1);
+  }, [cfg]);
+
+  const redo = useCallback(() => {
+    if (future.current.length === 0) return;
+    const next = future.current.shift()!;
+    past.current.push(cfg);
+    setCfg(next);
+    setHistTick((t) => t + 1);
+  }, [cfg]);
+
+  const isEditableTarget = (t: EventTarget | null) => {
+    if (!(t instanceof HTMLElement)) return false;
+    const tag = t.tagName.toLowerCase();
+    return tag === 'input' || tag === 'textarea' || tag === 'select' || t.isContentEditable;
   };
 
-  const save = async () => {
+  // keyboard shortcuts: Ctrl/Cmd+Z undo, Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y redo
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const mod = e.ctrlKey || e.metaKey;
+      if (!mod) return;
+      const k = e.key.toLowerCase();
+      if (k === 'z') {
+        if (isEditableTarget(e.target)) return; // let the field handle text undo
+        e.preventDefault();
+        if (e.shiftKey) redo();
+        else undo();
+      } else if (k === 'y') {
+        if (isEditableTarget(e.target)) return;
+        e.preventDefault();
+        redo();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [undo, redo]);
+
+  // ── unsaved-changes protection ────────────────────────────────────────────
+  useEffect(() => {
+    if (!dirty) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [dirty]);
+
+  // ── save ──────────────────────────────────────────────────────────────────
+  const save = useCallback(async () => {
     setBusy(true);
+    setSaveState('saving');
     setError(null);
     try {
       await api('/store-settings', { method: 'PUT', body: { config: cfg } });
-      setSavedTick(true);
-      setTimeout(() => setSavedTick(false), 2500);
+      setSavedCfg(cfg);
+      setSaveState('saved');
+      setSavedAt(
+        new Date().toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit' }),
+      );
     } catch (e: any) {
+      setSaveState('error');
       setError(e?.detail || e?.message || 'Save failed');
     } finally {
       setBusy(false);
     }
-  };
+  }, [cfg]);
+
+  // Ctrl/Cmd+S saves
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        save();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [save]);
 
   const upload = async (section: SectionKey, key: string, file?: File | null) => {
     if (!file) return;
@@ -223,8 +285,7 @@ export default function CustomizeEditor() {
   const resolveImg = (src?: string) =>
     src ? (src.startsWith('http') ? src : `${getApiBase()}/${src.replace(/^\/+/, '')}`) : '';
 
-  // ---------------- pages CRUD ----------------
-
+  // ── pages CRUD ────────────────────────────────────────────────────────────
   const savePage = async () => {
     if (!pageEditing?.title?.trim()) return;
     setBusy(true);
@@ -270,9 +331,15 @@ export default function CustomizeEditor() {
     }
   };
 
+  // exit with unsaved-changes guard
+  const exitEditor = () => {
+    if (dirty && !confirm('You have unsaved changes. Exit without saving?')) return;
+    router.push('/');
+  };
+
+  // ── field primitives (compact rows) ───────────────────────────────────────
   const linksOf = (arr: LinkRow[] | undefined) => arr ?? [];
 
-  // field helpers (compact Shopify-style rows)
   const Field = ({ title, children }: { title: string; children: React.ReactNode }) => (
     <div>
       <p className="text-[11px] font-medium text-slate-500 mb-1">{title}</p>
@@ -322,40 +389,99 @@ export default function CustomizeEditor() {
     </label>
   );
 
+  const canUndo = past.current.length > 0;
+  const canRedo = future.current.length > 0;
+
+  const deviceBtn = (d: Device, Icon: React.ComponentType<{ className?: string }>, title: string) => (
+    <button
+      key={d}
+      onClick={() => setDevice(d)}
+      title={title}
+      aria-pressed={device === d}
+      className={`p-1.5 rounded ${device === d ? 'bg-white text-slate-900' : 'text-white/60 hover:text-white'}`}
+    >
+      <Icon className="w-4 h-4" />
+    </button>
+  );
+
+  // preview frame width per device mode
+  const frameCls =
+    device === 'mobile'
+      ? 'w-[390px] h-full'
+      : device === 'tablet'
+        ? 'w-[768px] h-full max-w-full'
+        : 'w-full h-full';
+
   return (
-    <div className="h-screen flex flex-col bg-[#f1f1f1]">
-      {/* ── editor top bar ── */}
-      <header className="h-12 bg-[#1a1a1a] text-white flex items-center justify-between px-3 shrink-0 z-30">
-        <div className="flex items-center gap-2">
+    <div className="h-full flex flex-col bg-[#ececee]">
+      {/* ── top toolbar ── */}
+      <header className="h-12 bg-[#1a1a1a] text-white flex items-center justify-between px-2 sm:px-3 shrink-0 z-30 gap-2">
+        <div className="flex items-center gap-1.5 min-w-0">
           <button
-            onClick={() => router.push('/')}
+            onClick={exitEditor}
             title="Back to admin"
             className="p-1.5 rounded hover:bg-white/10 transition"
           >
             <ArrowLeft className="w-4 h-4" />
           </button>
-          <Palette className="w-4 h-4 text-[#95bf47]" />
-          <span className="font-semibold text-[13px]">Customize</span>
-          <span className="text-[11px] text-white/50 hidden sm:inline">· Khaadi theme</span>
-        </div>
-        <div className="flex items-center gap-2">
-          {/* device toggles */}
-          <div className="flex bg-white/10 rounded-lg p-0.5 mr-1">
-            <button
-              onClick={() => setDevice('desktop')}
-              title="Desktop preview"
-              className={`p-1.5 rounded ${device === 'desktop' ? 'bg-white text-slate-900' : 'text-white/60 hover:text-white'}`}
-            >
-              <Monitor className="w-3.5 h-3.5" />
-            </button>
-            <button
-              onClick={() => setDevice('mobile')}
-              title="Mobile preview"
-              className={`p-1.5 rounded ${device === 'mobile' ? 'bg-white text-slate-900' : 'text-white/60 hover:text-white'}`}
-            >
-              <Smartphone className="w-3.5 h-3.5" />
-            </button>
+          <button
+            onClick={() => setLeftOpen((v) => !v)}
+            title={leftOpen ? 'Hide settings panel' : 'Show settings panel'}
+            aria-pressed={leftOpen}
+            className="p-1.5 rounded hover:bg-white/10 transition"
+          >
+            <PanelLeft className="w-4 h-4" />
+          </button>
+          <div className="hidden sm:flex items-center gap-2 min-w-0 border-l border-white/10 pl-2 ml-1">
+            <span className="text-[13px] font-semibold truncate">Current theme</span>
+            <span className="text-[10px] font-bold bg-white/10 text-white/60 px-1.5 py-0.5 rounded">Draft</span>
           </div>
+        </div>
+
+        <div className="flex items-center gap-1 bg-white/5 rounded-lg p-0.5">
+          <button
+            onClick={undo}
+            disabled={!canUndo}
+            title="Undo (Ctrl+Z)"
+            className="p-1.5 rounded text-white/70 hover:text-white hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed transition"
+          >
+            <Undo2 className="w-4 h-4" />
+          </button>
+          <button
+            onClick={redo}
+            disabled={!canRedo}
+            title="Redo (Ctrl+Shift+Z)"
+            className="p-1.5 rounded text-white/70 hover:text-white hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed transition"
+          >
+            <Redo2 className="w-4 h-4" />
+          </button>
+          <span className="w-px h-4 bg-white/10 mx-0.5" />
+          {deviceBtn('desktop', Monitor, 'Desktop preview')}
+          {deviceBtn('tablet', Tablet, 'Tablet preview')}
+          {deviceBtn('mobile', Smartphone, 'Mobile preview')}
+        </div>
+
+        <div className="flex items-center gap-2">
+          <span
+            className={`hidden md:inline-flex items-center gap-1.5 text-[11px] font-semibold ${
+              saveState === 'error'
+                ? 'text-red-300'
+                : dirty || saveState === 'saving'
+                  ? 'text-amber-300'
+                  : 'text-[#7ee2b8]'
+            }`}
+            aria-live="polite"
+          >
+            {saveState === 'saving' || busy
+              ? 'Saving…'
+              : dirty
+                ? '● Unsaved changes'
+                : saveState === 'error'
+                  ? 'Save failed'
+                  : savedAt
+                    ? `✓ Saved ${savedAt}`
+                    : '✓ All changes saved'}
+          </span>
           <a
             href={STOREFRONT_URL}
             target="_blank"
@@ -365,339 +491,332 @@ export default function CustomizeEditor() {
           >
             <ExternalLink className="w-4 h-4" />
           </a>
-          {savedTick && (
-            <span className="text-[11px] font-semibold text-[#7ee2b8] flex items-center gap-1">
-              <Check className="w-3.5 h-3.5" /> Saved
-            </span>
-          )}
           <button
             onClick={save}
-            disabled={busy}
-            className="bg-[#95bf47] hover:bg-[#83a83c] disabled:opacity-50 text-[#1a1a1a] text-xs font-bold px-4 py-1.5 rounded-lg transition flex items-center gap-1.5"
+            disabled={busy || !dirty}
+            className="bg-[#95bf47] hover:bg-[#83a83c] disabled:opacity-40 disabled:cursor-not-allowed text-[#1a1a1a] text-xs font-bold px-4 py-1.5 rounded-lg transition flex items-center gap-1.5"
           >
-            {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Save'}
+            {saveState === 'saving' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Save'}
           </button>
         </div>
       </header>
 
       {error && (
-        <div className="bg-red-50 border-b border-red-200 text-red-700 px-4 py-2 text-xs">{error}</div>
+        <div className="bg-red-50 border-b border-red-200 text-red-700 px-4 py-2 text-xs shrink-0">{error}</div>
       )}
 
       <div className="flex flex-1 min-h-0">
-        {/* ── left: sections panel ── */}
-        <aside className="w-[360px] bg-white border-r border-slate-200 flex flex-col shrink-0">
-          <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
-            <p className="text-[13px] font-semibold text-slate-900">Sections</p>
-            <button
-              onClick={() => setPageEditing({ title: '', content: '', isPublished: false })}
-              className="text-[11px] font-semibold text-slate-600 hover:text-slate-900 flex items-center gap-1"
-            >
-              <FileText className="w-3.5 h-3.5" /> Pages ({pages.length})
-            </button>
-          </div>
-          <div className="flex-1 overflow-y-auto px-2 py-2">
-            {!loaded ? (
-              <div className="py-16 text-center text-slate-400 text-xs">Loading…</div>
-            ) : (
-              SECTIONS.map(({ key, title, icon: Icon }) => {
-                const open = activeSection === key;
-                return (
-                  <div key={key} className="mb-1">
-                    <button
-                      onClick={() => setActiveSection(open ? ('' as SectionKey) : key)}
-                      className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-left transition ${
-                        open ? 'bg-slate-100' : 'hover:bg-slate-50'
-                      }`}
-                    >
-                      <Icon className="w-4 h-4 text-slate-500 shrink-0" />
-                      <span className="text-[13px] font-medium text-slate-800 flex-1">{title}</span>
-                      {(key === 'announcement' || key === 'hero') && (
-                        <span
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            const k = key === 'announcement' ? 'enabled' : 'enabled';
-                            set(key, k, !(key === 'announcement' ? cfg.announcement.enabled !== false : cfg.hero.enabled !== false));
-                          }}
-                          className="p-1 rounded hover:bg-slate-200 text-slate-400"
-                          title="Show / hide"
-                        >
-                          {(key === 'announcement' ? cfg.announcement.enabled !== false : cfg.hero.enabled !== false) ? (
-                            <Eye className="w-3.5 h-3.5" />
-                          ) : (
-                            <EyeOff className="w-3.5 h-3.5" />
-                          )}
-                        </span>
-                      )}
-                    </button>
+        {/* ── left: customization panel ── */}
+        {leftOpen && (
+          <aside className="w-[300px] xl:w-[330px] bg-white border-r border-slate-200 flex flex-col shrink-0">
+            <div className="px-4 h-11 border-b border-slate-100 flex items-center justify-between shrink-0">
+              <p className="text-[12px] font-bold uppercase tracking-wider text-slate-500">Sections</p>
+              <button
+                onClick={() => setPageEditing({ title: '', content: '', isPublished: false })}
+                className="text-[11px] font-semibold text-slate-600 hover:text-slate-900 flex items-center gap-1"
+              >
+                <FileText className="w-3.5 h-3.5" /> Pages ({pages.length})
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-2 py-2">
+              {!loaded ? (
+                <div className="py-16 text-center text-slate-400 text-xs">Loading…</div>
+              ) : (
+                SECTIONS.map(({ key, title, icon: Icon }) => {
+                  const open = activeSection === key;
+                  return (
+                    <div key={key} className="mb-1">
+                      <button
+                        onClick={() => setActiveSection(open ? '' : key)}
+                        aria-expanded={open}
+                        className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-left transition ${
+                          open ? 'bg-slate-100' : 'hover:bg-slate-50'
+                        }`}
+                      >
+                        <Icon className="w-4 h-4 text-slate-500 shrink-0" />
+                        <span className="text-[13px] font-medium text-slate-800 flex-1">{title}</span>
+                        {(key === 'announcement' || key === 'hero') && (
+                          <span
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              set(key, 'enabled', !(key === 'announcement' ? cfg.announcement.enabled !== false : cfg.hero.enabled !== false));
+                            }}
+                            className="p-1 rounded hover:bg-slate-200 text-slate-400"
+                            title="Show / hide"
+                          >
+                            {(key === 'announcement' ? cfg.announcement.enabled !== false : cfg.hero.enabled !== false) ? (
+                              <Eye className="w-3.5 h-3.5" />
+                            ) : (
+                              <EyeOff className="w-3.5 h-3.5" />
+                            )}
+                          </span>
+                        )}
+                      </button>
 
-                    {open && (
-                      <div className="px-3 pb-4 pt-2 space-y-3 border-b border-slate-100">
-                        {/* ---- BRANDING ---- */}
-                        {key === 'branding' && (
-                          <>
-                            <Field title="Logo">
-                              <div className="flex items-center gap-2.5">
-                                {cfg.branding.logoUrl ? (
-                                  /* eslint-disable-next-line @next/next/no-img-element */
-                                  <img src={resolveImg(cfg.branding.logoUrl)} alt="" className="w-10 h-10 rounded-lg object-cover border border-slate-200" />
-                                ) : (
-                                  <div className="w-10 h-10 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-400">
-                                    <ImageIcon className="w-4 h-4" />
-                                  </div>
-                                )}
-                                <button onClick={() => logoInput.current?.click()} className="text-xs font-medium border border-slate-300 rounded-lg px-2.5 py-1.5 hover:bg-slate-50">
-                                  <Upload className="w-3.5 h-3.5 inline mr-1" /> Upload
-                                </button>
-                                {cfg.branding.logoUrl && (
-                                  <button onClick={() => set('branding', 'logoUrl', '')} className="text-xs text-red-600 hover:text-red-700">
-                                    Remove
+                      {open && (
+                        <div className="px-3 pb-4 pt-2 space-y-3 border-b border-slate-100">
+                          {/* ---- BRANDING ---- */}
+                          {key === 'branding' && (
+                            <>
+                              <Field title="Logo">
+                                <div className="flex items-center gap-2.5">
+                                  {cfg.branding.logoUrl ? (
+                                    /* eslint-disable-next-line @next/next/no-img-element */
+                                    <img src={resolveImg(cfg.branding.logoUrl)} alt="" className="w-10 h-10 rounded-lg object-cover border border-slate-200" />
+                                  ) : (
+                                    <div className="w-10 h-10 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-400">
+                                      <ImageIcon className="w-4 h-4" />
+                                    </div>
+                                  )}
+                                  <button onClick={() => logoInput.current?.click()} className="text-xs font-medium border border-slate-300 rounded-lg px-2.5 py-1.5 hover:bg-slate-50">
+                                    <Upload className="w-3.5 h-3.5 inline mr-1" /> Upload
                                   </button>
-                                )}
-                                <input ref={logoInput} type="file" accept="image/*" hidden onChange={(e) => upload('branding', 'logoUrl', e.target.files?.[0])} />
-                              </div>
-                            </Field>
-                            <Field title="Favicon (browser tab)">
-                              <div className="flex items-center gap-2.5">
-                                {cfg.branding.faviconUrl ? (
-                                  /* eslint-disable-next-line @next/next/no-img-element */
-                                  <img src={resolveImg(cfg.branding.faviconUrl)} alt="" className="w-7 h-7 rounded-md object-cover border border-slate-200" />
-                                ) : (
-                                  <div className="w-7 h-7 rounded-md bg-slate-100 border border-slate-200" />
-                                )}
-                                <button onClick={() => faviconInput.current?.click()} className="text-xs font-medium border border-slate-300 rounded-lg px-2.5 py-1.5 hover:bg-slate-50">
-                                  <Upload className="w-3.5 h-3.5 inline mr-1" /> Upload
-                                </button>
-                                <input ref={faviconInput} type="file" accept="image/*" hidden onChange={(e) => upload('branding', 'faviconUrl', e.target.files?.[0])} />
-                              </div>
-                            </Field>
-                            <TextField title="Tagline (under store name)" value={cfg.branding.tagline || ''} onChange={(v) => set('branding', 'tagline', v)} placeholder="Pure Fabrics Since 1995" />
-                          </>
-                        )}
+                                  {cfg.branding.logoUrl && (
+                                    <button onClick={() => set('branding', 'logoUrl', '')} className="text-xs text-red-600 hover:text-red-700">
+                                      Remove
+                                    </button>
+                                  )}
+                                  <input ref={logoInput} type="file" accept="image/*" hidden onChange={(e) => upload('branding', 'logoUrl', e.target.files?.[0])} />
+                                </div>
+                              </Field>
+                              <Field title="Favicon (browser tab)">
+                                <div className="flex items-center gap-2.5">
+                                  {cfg.branding.faviconUrl ? (
+                                    /* eslint-disable-next-line @next/next/no-img-element */
+                                    <img src={resolveImg(cfg.branding.faviconUrl)} alt="" className="w-7 h-7 rounded-md object-cover border border-slate-200" />
+                                  ) : (
+                                    <div className="w-7 h-7 rounded-md bg-slate-100 border border-slate-200" />
+                                  )}
+                                  <button onClick={() => faviconInput.current?.click()} className="text-xs font-medium border border-slate-300 rounded-lg px-2.5 py-1.5 hover:bg-slate-50">
+                                    <Upload className="w-3.5 h-3.5 inline mr-1" /> Upload
+                                  </button>
+                                  <input ref={faviconInput} type="file" accept="image/*" hidden onChange={(e) => upload('branding', 'faviconUrl', e.target.files?.[0])} />
+                                </div>
+                              </Field>
+                              <TextField title="Tagline (under store name)" value={cfg.branding.tagline || ''} onChange={(v) => set('branding', 'tagline', v)} placeholder="Pure Fabrics Since 1995" />
+                            </>
+                          )}
 
-                        {/* ---- THEME ---- */}
-                        {key === 'theme' && (
-                          <>
-                            <Field title="Primary color">
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <input type="color" value={cfg.theme.primary || '#059669'} onChange={(e) => set('theme', 'primary', e.target.value)} className="w-9 h-9 rounded-lg border border-slate-200 cursor-pointer" />
-                                {COLOR_PRESETS.map((c) => (
-                                  <button key={c} onClick={() => set('theme', 'primary', c)} className={`w-7 h-7 rounded-lg border-2 ${cfg.theme.primary === c ? 'border-slate-900' : 'border-white ring-1 ring-slate-200'} shadow-sm`} style={{ backgroundColor: c }} />
-                                ))}
+                          {/* ---- THEME COLORS ---- */}
+                          {key === 'theme' && (
+                            <>
+                              <Field title="Primary color">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <input type="color" value={cfg.theme.primary || '#059669'} onChange={(e) => set('theme', 'primary', e.target.value)} className="w-9 h-9 rounded-lg border border-slate-200 cursor-pointer" />
+                                  {COLOR_PRESETS.map((c) => (
+                                    <button key={c} onClick={() => set('theme', 'primary', c)} aria-label={`Primary ${c}`} className={`w-7 h-7 rounded-lg border-2 ${cfg.theme.primary === c ? 'border-slate-900' : 'border-white ring-1 ring-slate-200'} shadow-sm`} style={{ backgroundColor: c }} />
+                                  ))}
+                                </div>
+                              </Field>
+                              <Field title="Accent color">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <input type="color" value={cfg.theme.accent || '#0d9488'} onChange={(e) => set('theme', 'accent', e.target.value)} className="w-9 h-9 rounded-lg border border-slate-200 cursor-pointer" />
+                                  {COLOR_PRESETS.slice().reverse().map((c) => (
+                                    <button key={c} onClick={() => set('theme', 'accent', c)} aria-label={`Accent ${c}`} className={`w-7 h-7 rounded-lg border-2 ${cfg.theme.accent === c ? 'border-slate-900' : 'border-white ring-1 ring-slate-200'} shadow-sm`} style={{ backgroundColor: c }} />
+                                  ))}
+                                </div>
+                              </Field>
+                            </>
+                          )}
+
+                          {/* ---- ANNOUNCEMENT ---- */}
+                          {key === 'announcement' && (
+                            <TextField title="Text" value={cfg.announcement.text || ''} onChange={(v) => set('announcement', 'text', v)} />
+                          )}
+
+                          {/* ---- HERO ---- */}
+                          {key === 'hero' && (
+                            <>
+                              <TextField title="Badge" value={cfg.hero.badge || ''} onChange={(v) => set('hero', 'badge', v)} />
+                              <TextField title="Heading" value={cfg.hero.title || ''} onChange={(v) => set('hero', 'title', v)} />
+                              <TextField title="Sub-heading" value={cfg.hero.subtitle || ''} onChange={(v) => set('hero', 'subtitle', v)} area />
+                              <Field title="Image (optional — defaults to latest product)">
+                                <div className="flex items-center gap-2">
+                                  {cfg.hero.imageUrl && (
+                                    /* eslint-disable-next-line @next/next/no-img-element */
+                                    <img src={resolveImg(cfg.hero.imageUrl)} alt="" className="w-8 h-10 rounded-md object-cover border border-slate-200" />
+                                  )}
+                                  <button onClick={() => heroInput.current?.click()} className="text-xs font-medium border border-slate-300 rounded-lg px-2.5 py-1.5 hover:bg-slate-50">
+                                    <Upload className="w-3.5 h-3.5 inline mr-1" /> Upload
+                                  </button>
+                                  {cfg.hero.imageUrl && (
+                                    <button onClick={() => set('hero', 'imageUrl', '')} className="text-xs text-red-600">Remove</button>
+                                  )}
+                                  <input ref={heroInput} type="file" accept="image/*" hidden onChange={(e) => upload('hero', 'imageUrl', e.target.files?.[0])} />
+                                </div>
+                              </Field>
+                              <div className="grid grid-cols-2 gap-2">
+                                <TextField title="Button text" value={cfg.hero.ctaText || ''} onChange={(v) => set('hero', 'ctaText', v)} />
+                                <TextField title="Button link" value={cfg.hero.ctaLink || ''} onChange={(v) => set('hero', 'ctaLink', v)} placeholder="/products" />
                               </div>
-                            </Field>
-                            <Field title="Accent color">
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <input type="color" value={cfg.theme.accent || '#0d9488'} onChange={(e) => set('theme', 'accent', e.target.value)} className="w-9 h-9 rounded-lg border border-slate-200 cursor-pointer" />
-                                {COLOR_PRESETS.slice().reverse().map((c) => (
-                                  <button key={c} onClick={() => set('theme', 'accent', c)} className={`w-7 h-7 rounded-lg border-2 ${cfg.theme.accent === c ? 'border-slate-900' : 'border-white ring-1 ring-slate-200'} shadow-sm`} style={{ backgroundColor: c }} />
-                                ))}
-                              </div>
-                            </Field>
-                          </>
-                        )}
+                            </>
+                          )}
 
-                        {/* ---- ANNOUNCEMENT ---- */}
-                        {key === 'announcement' && (
-                          <TextField title="Text" value={cfg.announcement.text || ''} onChange={(v) => set('announcement', 'text', v)} />
-                        )}
-
-                        {/* ---- HERO ---- */}
-                        {key === 'hero' && (
-                          <>
-                            <TextField title="Badge" value={cfg.hero.badge || ''} onChange={(v) => set('hero', 'badge', v)} />
-                            <TextField title="Heading" value={cfg.hero.title || ''} onChange={(v) => set('hero', 'title', v)} />
-                            <TextField title="Sub-heading" value={cfg.hero.subtitle || ''} onChange={(v) => set('hero', 'subtitle', v)} area />
-                            <Field title="Image (optional — defaults to latest product)">
-                              <div className="flex items-center gap-2">
-                                {cfg.hero.imageUrl && (
-                                  /* eslint-disable-next-line @next/next/no-img-element */
-                                  <img src={resolveImg(cfg.hero.imageUrl)} alt="" className="w-8 h-10 rounded-md object-cover border border-slate-200" />
-                                )}
-                                <button onClick={() => heroInput.current?.click()} className="text-xs font-medium border border-slate-300 rounded-lg px-2.5 py-1.5 hover:bg-slate-50">
-                                  <Upload className="w-3.5 h-3.5 inline mr-1" /> Upload
-                                </button>
-                                {cfg.hero.imageUrl && (
-                                  <button onClick={() => set('hero', 'imageUrl', '')} className="text-xs text-red-600">Remove</button>
-                                )}
-                                <input ref={heroInput} type="file" accept="image/*" hidden onChange={(e) => upload('hero', 'imageUrl', e.target.files?.[0])} />
-                              </div>
-                            </Field>
-                            <div className="grid grid-cols-2 gap-2">
-                              <TextField title="Button text" value={cfg.hero.ctaText || ''} onChange={(v) => set('hero', 'ctaText', v)} />
-                              <TextField title="Button link" value={cfg.hero.ctaLink || ''} onChange={(v) => set('hero', 'ctaLink', v)} placeholder="/products" />
-                            </div>
-                          </>
-                        )}
-
-                        {/* ---- HOME SECTIONS ---- */}
-                        {key === 'sections' && (
-                          <>
-                            <Toggle title="Feature highlights strip" checked={cfg.sections.showFeatures !== false} onChange={(v) => set('sections', 'showFeatures', v)} />
-                            <Field title="Featured products shown">
-                              <input
-                                value={String(cfg.sections.featuredCount ?? 8)}
-                                onChange={(e) => set('sections', 'featuredCount', Number(e.target.value.replace(/\D/g, '')) || 8)}
-                                className="w-20 rounded-lg border border-slate-300 px-3 py-[7px] text-[13px] outline-none focus:border-slate-900"
-                              />
-                            </Field>
-                            <TextField title="Home blurb (optional)" value={cfg.sections.aboutBlurb || ''} onChange={(v) => set('sections', 'aboutBlurb', v)} />
-                          </>
-                        )}
-
-                        {/* ---- HEADER MENU ---- */}
-                        {key === 'header' && (
-                          <div className="space-y-2">
-                            {linksOf(cfg.header.menuLinks).map((l, i) => (
-                              <div key={i} className="flex gap-1.5">
+                          {/* ---- HOME SECTIONS ---- */}
+                          {key === 'sections' && (
+                            <>
+                              <Toggle title="Feature highlights strip" checked={cfg.sections.showFeatures !== false} onChange={(v) => set('sections', 'showFeatures', v)} />
+                              <Field title="Featured products shown">
                                 <input
-                                  value={l.label}
-                                  placeholder="Label"
-                                  onChange={(e) => {
-                                    const arr = [...linksOf(cfg.header.menuLinks)];
-                                    arr[i] = { ...arr[i], label: e.target.value };
-                                    set('header', 'menuLinks', arr);
-                                  }}
-                                  className="w-28 rounded-lg border border-slate-300 px-2.5 py-[7px] text-xs outline-none focus:border-slate-900"
+                                  value={String(cfg.sections.featuredCount ?? 8)}
+                                  onChange={(e) => set('sections', 'featuredCount', Number(e.target.value.replace(/\D/g, '')) || 8)}
+                                  className="w-20 rounded-lg border border-slate-300 px-3 py-[7px] text-[13px] outline-none focus:border-slate-900"
                                 />
-                                <input
-                                  value={l.href}
-                                  placeholder="/products"
-                                  onChange={(e) => {
-                                    const arr = [...linksOf(cfg.header.menuLinks)];
-                                    arr[i] = { ...arr[i], href: e.target.value };
-                                    set('header', 'menuLinks', arr);
-                                  }}
-                                  className="flex-1 rounded-lg border border-slate-300 px-2.5 py-[7px] text-xs outline-none focus:border-slate-900"
-                                />
-                                <button
-                                  onClick={() => set('header', 'menuLinks', linksOf(cfg.header.menuLinks).filter((_, x) => x !== i))}
-                                  className="p-1.5 text-red-500 hover:bg-red-50 rounded"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                            ))}
-                            <button
-                              onClick={() => set('header', 'menuLinks', [...linksOf(cfg.header.menuLinks), { label: '', href: '' }])}
-                              className="text-xs font-semibold text-slate-600 hover:text-slate-900 flex items-center gap-1"
-                            >
-                              <Plus className="w-3.5 h-3.5" /> Add link
-                            </button>
-                          </div>
-                        )}
+                              </Field>
+                              <TextField title="Home blurb (optional)" value={cfg.sections.aboutBlurb || ''} onChange={(v) => set('sections', 'aboutBlurb', v)} />
+                            </>
+                          )}
 
-                        {/* ---- FOOTER ---- */}
-                        {key === 'footer' && (
-                          <>
-                            <TextField title="About text" value={cfg.footer.aboutText || ''} onChange={(v) => set('footer', 'aboutText', v)} area />
-                            <div className="grid grid-cols-2 gap-2">
-                              <TextField title="WhatsApp" value={cfg.footer.social?.whatsapp || ''} onChange={(v) => set('footer', 'social', { ...cfg.footer.social, whatsapp: v })} placeholder="0321…" />
-                              <TextField title="Instagram" value={cfg.footer.social?.instagram || ''} onChange={(v) => set('footer', 'social', { ...cfg.footer.social, instagram: v })} />
-                              <TextField title="Facebook" value={cfg.footer.social?.facebook || ''} onChange={(v) => set('footer', 'social', { ...cfg.footer.social, facebook: v })} />
-                              <TextField title="TikTok" value={cfg.footer.social?.tiktok || ''} onChange={(v) => set('footer', 'social', { ...cfg.footer.social, tiktok: v })} />
-                            </div>
-                            <div className="space-y-1.5">
-                              {linksOf(cfg.footer.quickLinks).map((l, i) => (
+                          {/* ---- HEADER MENU ---- */}
+                          {key === 'header' && (
+                            <div className="space-y-2">
+                              {linksOf(cfg.header.menuLinks).map((l, i) => (
                                 <div key={i} className="flex gap-1.5">
                                   <input
                                     value={l.label}
                                     placeholder="Label"
                                     onChange={(e) => {
-                                      const arr = [...linksOf(cfg.footer.quickLinks)];
+                                      const arr = [...linksOf(cfg.header.menuLinks)];
                                       arr[i] = { ...arr[i], label: e.target.value };
-                                      set('footer', 'quickLinks', arr);
+                                      set('header', 'menuLinks', arr);
                                     }}
                                     className="w-28 rounded-lg border border-slate-300 px-2.5 py-[7px] text-xs outline-none focus:border-slate-900"
                                   />
                                   <input
                                     value={l.href}
-                                    placeholder="/p/about-us"
+                                    placeholder="/products"
                                     onChange={(e) => {
-                                      const arr = [...linksOf(cfg.footer.quickLinks)];
+                                      const arr = [...linksOf(cfg.header.menuLinks)];
                                       arr[i] = { ...arr[i], href: e.target.value };
-                                      set('footer', 'quickLinks', arr);
+                                      set('header', 'menuLinks', arr);
                                     }}
                                     className="flex-1 rounded-lg border border-slate-300 px-2.5 py-[7px] text-xs outline-none focus:border-slate-900"
                                   />
                                   <button
-                                    onClick={() => set('footer', 'quickLinks', linksOf(cfg.footer.quickLinks).filter((_, x) => x !== i))}
+                                    onClick={() => set('header', 'menuLinks', linksOf(cfg.header.menuLinks).filter((_, x) => x !== i))}
                                     className="p-1.5 text-red-500 hover:bg-red-50 rounded"
+                                    title="Remove link"
                                   >
                                     <Trash2 className="w-3.5 h-3.5" />
                                   </button>
                                 </div>
                               ))}
                               <button
-                                onClick={() => set('footer', 'quickLinks', [...linksOf(cfg.footer.quickLinks), { label: '', href: '' }])}
+                                onClick={() => set('header', 'menuLinks', [...linksOf(cfg.header.menuLinks), { label: '', href: '' }])}
                                 className="text-xs font-semibold text-slate-600 hover:text-slate-900 flex items-center gap-1"
                               >
-                                <Plus className="w-3.5 h-3.5" /> Add quick link
+                                <Plus className="w-3.5 h-3.5" /> Add link
                               </button>
                             </div>
-                            <TextField title="Copyright note" value={cfg.footer.copyright || ''} onChange={(v) => set('footer', 'copyright', v)} />
-                          </>
-                        )}
+                          )}
 
-                        {/* ---- PAYMENTS ---- */}
-                        {key === 'payments' && (
-                          <div className="space-y-1">
-                            {(['COD', 'IBFT', 'RAAST', 'JAZZCASH', 'EASYPAISA'] as const).map((m) => (
-                              <Toggle
-                                key={m}
-                                title={m}
-                                checked={cfg.payments[m] !== false}
-                                onChange={(v) => set('payments', m, v)}
-                              />
-                            ))}
-                          </div>
-                        )}
+                          {/* ---- FOOTER ---- */}
+                          {key === 'footer' && (
+                            <>
+                              <TextField title="About text" value={cfg.footer.aboutText || ''} onChange={(v) => set('footer', 'aboutText', v)} area />
+                              <div className="grid grid-cols-2 gap-2">
+                                <TextField title="WhatsApp" value={cfg.footer.social?.whatsapp || ''} onChange={(v) => set('footer', 'social', { ...cfg.footer.social, whatsapp: v })} placeholder="0321…" />
+                                <TextField title="Instagram" value={cfg.footer.social?.instagram || ''} onChange={(v) => set('footer', 'social', { ...cfg.footer.social, instagram: v })} />
+                                <TextField title="Facebook" value={cfg.footer.social?.facebook || ''} onChange={(v) => set('footer', 'social', { ...cfg.footer.social, facebook: v })} />
+                                <TextField title="TikTok" value={cfg.footer.social?.tiktok || ''} onChange={(v) => set('footer', 'social', { ...cfg.footer.social, tiktok: v })} />
+                              </div>
+                              <div className="space-y-1.5">
+                                {linksOf(cfg.footer.quickLinks).map((l, i) => (
+                                  <div key={i} className="flex gap-1.5">
+                                    <input
+                                      value={l.label}
+                                      placeholder="Label"
+                                      onChange={(e) => {
+                                        const arr = [...linksOf(cfg.footer.quickLinks)];
+                                        arr[i] = { ...arr[i], label: e.target.value };
+                                        set('footer', 'quickLinks', arr);
+                                      }}
+                                      className="w-28 rounded-lg border border-slate-300 px-2.5 py-[7px] text-xs outline-none focus:border-slate-900"
+                                    />
+                                    <input
+                                      value={l.href}
+                                      placeholder="/p/about-us"
+                                      onChange={(e) => {
+                                        const arr = [...linksOf(cfg.footer.quickLinks)];
+                                        arr[i] = { ...arr[i], href: e.target.value };
+                                        set('footer', 'quickLinks', arr);
+                                      }}
+                                      className="flex-1 rounded-lg border border-slate-300 px-2.5 py-[7px] text-xs outline-none focus:border-slate-900"
+                                    />
+                                    <button
+                                      onClick={() => set('footer', 'quickLinks', linksOf(cfg.footer.quickLinks).filter((_, x) => x !== i))}
+                                      className="p-1.5 text-red-500 hover:bg-red-50 rounded"
+                                      title="Remove link"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                ))}
+                                <button
+                                  onClick={() => set('footer', 'quickLinks', [...linksOf(cfg.footer.quickLinks), { label: '', href: '' }])}
+                                  className="text-xs font-semibold text-slate-600 hover:text-slate-900 flex items-center gap-1"
+                                >
+                                  <Plus className="w-3.5 h-3.5" /> Add quick link
+                                </button>
+                              </div>
+                              <TextField title="Copyright note" value={cfg.footer.copyright || ''} onChange={(v) => set('footer', 'copyright', v)} />
+                            </>
+                          )}
 
-                        {/* ---- CHECKOUT ---- */}
-                        {key === 'checkout' && (
-                          <>
-                            <TextField title="Confirmation message (order page)" value={cfg.checkout.confirmationMsg || ''} onChange={(v) => set('checkout', 'confirmationMsg', v)} placeholder="Shukriya! Order confirm ho gaya." />
-                            <Toggle title="Show order notes field" checked={cfg.checkout.allowNotes !== false} onChange={(v) => set('checkout', 'allowNotes', v)} />
-                          </>
-                        )}
+                          {/* ---- PAYMENTS ---- */}
+                          {key === 'payments' && (
+                            <div className="space-y-1">
+                              {(['COD', 'IBFT', 'RAAST', 'JAZZCASH', 'EASYPAISA'] as const).map((m) => (
+                                <Toggle
+                                  key={m}
+                                  title={m}
+                                  checked={cfg.payments[m] !== false}
+                                  onChange={(v) => set('payments', m, v)}
+                                />
+                              ))}
+                            </div>
+                          )}
 
-                        {/* ---- SEO ---- */}
-                        {key === 'seo' && (
-                          <>
-                            <TextField title="Meta title" value={cfg.seo.metaTitle || ''} onChange={(v) => set('seo', 'metaTitle', v)} />
-                            <TextField title="Meta description" value={cfg.seo.metaDescription || ''} onChange={(v) => set('seo', 'metaDescription', v)} area />
-                          </>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </aside>
+                          {/* ---- CHECKOUT ---- */}
+                          {key === 'checkout' && (
+                            <>
+                              <TextField title="Confirmation message (order page)" value={cfg.checkout.confirmationMsg || ''} onChange={(v) => set('checkout', 'confirmationMsg', v)} placeholder="Shukriya! Order confirm ho gaya." />
+                              <Toggle title="Show order notes field" checked={cfg.checkout.allowNotes !== false} onChange={(v) => set('checkout', 'allowNotes', v)} />
+                            </>
+                          )}
 
-        {/* ── right: live preview ── */}
-        <main className="flex-1 min-w-0 flex flex-col">
-          <div className="flex-1 overflow-auto flex justify-center bg-[#e0e0e0] p-4">
-            <div
-              className={`bg-white shadow-2xl rounded-xl overflow-hidden transition-all duration-300 ${
-                device === 'mobile' ? 'w-[390px] h-fit' : 'w-full'
-              }`}
-            >
-              <iframe
-                ref={iframeRef}
-                src={`${STOREFRONT_URL}/?preview=1`}
-                title="Storefront preview"
-                onLoad={sendPreview}
-                className={`w-full border-0 ${device === 'mobile' ? 'h-[700px]' : 'h-[calc(100vh-7rem)]'}`}
-              />
+                          {/* ---- SEO ---- */}
+                          {key === 'seo' && (
+                            <>
+                              <TextField title="Meta title" value={cfg.seo.metaTitle || ''} onChange={(v) => set('seo', 'metaTitle', v)} />
+                              <TextField title="Meta description" value={cfg.seo.metaDescription || ''} onChange={(v) => set('seo', 'metaDescription', v)} area />
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
             </div>
+          </aside>
+        )}
+
+        {/* ── center: live preview (same renderer as public storefront) ── */}
+        <section className="flex-1 min-w-0 flex items-stretch justify-center overflow-hidden">
+          <div className={`bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_18px_50px_rgba(0,0,0,0.14)] overflow-hidden transition-all duration-300 ${frameCls}`}>
+            <iframe
+              ref={iframeRef}
+              src={`${STOREFRONT_URL}/?preview=1`}
+              title="Storefront preview"
+              onLoad={sendPreview}
+              className="w-full h-full border-0 block"
+            />
           </div>
-        </main>
+        </section>
       </div>
 
-      {/* pages modal */}
+      {/* ── pages modal ── */}
       {pageEditing && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/40" onClick={() => setPageEditing(null)} />
@@ -741,10 +860,7 @@ export default function CustomizeEditor() {
                   <button
                     onClick={() => {
                       const p = pages.find((x) => x.id === pageEditing.id);
-                      if (p) {
-                        delPage(p);
-                        setPageEditing(null);
-                      }
+                      if (p) { delPage(p); setPageEditing(null); }
                     }}
                     className="bg-white border border-red-300 text-red-600 rounded-lg px-3.5 py-2 text-[13px] font-medium hover:bg-red-50 transition"
                   >
