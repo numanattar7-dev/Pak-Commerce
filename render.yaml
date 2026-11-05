@@ -1,6 +1,9 @@
 # Pak Commerce API — Render web service (staging)
 # Database: Neon Postgres (NOT Render Postgres) — paste the Neon POOLED connection
 # string as DATABASE_URL on first deploy (sync: false).
+# SAFETY: schema is NEVER modified during build/deploy. Prisma db push / migrate
+# commands are deliberate, manual operations only — and only against a backed-up
+# Neon branch. See DEPLOY.md ("Database schema changes"). Never use --accept-data-loss.
 # Gateway/courier/SMS/FBR credentials are NOT env vars anymore — they are per-tenant
 # rows in integration_settings (Admin → Settings → Integrations, write-only).
 services:
@@ -9,7 +12,7 @@ services:
     env: node
     region: singapore            # same region as the Neon ap-southeast-1 database
     plan: free
-    buildCommand: npm install --include=dev && npx prisma generate --schema=packages/database/prisma/schema.prisma && npx prisma db push --schema=packages/database/prisma/schema.prisma --skip-generate && npm run build --workspace=apps/api-backend
+    buildCommand: npm install --include=dev && npx prisma generate --schema=packages/database/prisma/schema.prisma && npm run build --workspace=apps/api-backend
     startCommand: node apps/api-backend/dist/main.js
     healthCheckPath: /products/store/khaadi
     envVars:

@@ -14,7 +14,7 @@ Database already lives on **Neon** (no Render Postgres needed).
    ```
 2. Render Dashboard → **New → Blueprint** → select the repo. `render.yaml` pre-fills:
    - Node service `pak-commerce-api` (Singapore region, free plan)
-   - Build: install → prisma generate → **prisma db push** (schema sync) → nest build
+   - Build: install → prisma generate → nest build (**no database commands run at build time**)
    - Start: `node apps/api-backend/dist/main.js`
    - `JWT_SECRET` auto-generated
 3. Fill the `sync: false` env vars when prompted:
@@ -31,7 +31,16 @@ Database already lives on **Neon** (no Render Postgres needed).
    > `DATABASE_URL` at the branch endpoint — instant copy-on-write staging data.
 
 Notes:
-- `prisma db push` (not `migrate deploy`) — this repo manages schema by push, there is no migrations folder.
+- **Database schema changes are MANUAL and deliberate — never run at build/deploy time.**
+  1. Create a backup **branch** of the Neon database (Neon console → Branches) before any schema change.
+  2. Apply `prisma db push` (or a reviewed migration) **only against that branch** first.
+  3. Verify tables, row counts and **no drift**, then merge the branch.
+  4. **Never use `--accept-data-loss`.** Never let CI/Render apply schema changes implicitly.
+  - Historical warning (Nov 2026): Render builds ran `prisma db push` and attempted to **drop
+    `store_settings.draftJson` (1 row), `blog_posts` (1 row), `store_settings_versions` (6 rows)** —
+    i.e. the production database contained objects missing from the committed Prisma schema.
+    Automatic schema sync was removed from `render.yaml` to stop that class of failure permanently.
+    The committed schema and the live database have drifted — reconcile manually with a backup branch.
 - Uploads (`/uploads`) are served from the instance disk → **ephemeral on Render free tier**; images vanish on redeploy. Fine for staging.
 - Free tier sleeps after 15 min idle → first request cold-starts (~30–60 s).
 
