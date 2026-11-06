@@ -7,6 +7,7 @@
 
 import type { PkSection } from './sections';
 import { DEFAULT_HOME_SECTIONS } from './sections';
+import type { NavNode } from './navigation';
 
 export type LinkRow = { label: string; href: string };
 
@@ -25,6 +26,7 @@ export type StoreCustomization = {
   };
   sections: { showFeatures?: boolean; featuredCount?: number; aboutBlurb?: string };
   home: { sections: PkSection[] };
+  navigation?: { header?: NavNode[]; footer?: NavNode[] };
   header: { menuLinks?: LinkRow[] };
   footer: {
     aboutText?: string;
@@ -34,7 +36,7 @@ export type StoreCustomization = {
   };
   payments: { COD?: boolean; IBFT?: boolean; RAAST?: boolean; JAZZCASH?: boolean; EASYPAISA?: boolean };
   checkout: { confirmationMsg?: string; allowNotes?: boolean };
-  seo: { metaTitle?: string; metaDescription?: string };
+  seo: { metaTitle?: string; metaDescription?: string; blogTitle?: string; blogDescription?: string };
 };
 
 export const DEFAULT_CUSTOMIZATION: StoreCustomization = {
@@ -68,7 +70,7 @@ export const DEFAULT_CUSTOMIZATION: StoreCustomization = {
   },
   payments: { COD: true, IBFT: true, RAAST: true, JAZZCASH: true, EASYPAISA: true },
   checkout: { confirmationMsg: '', allowNotes: true },
-  seo: { metaTitle: '', metaDescription: '' },
+  seo: { metaTitle: '', metaDescription: '', blogTitle: '', blogDescription: '' },
 };
 
 /** Shallow-merge each top-level section over the defaults. */
@@ -90,6 +92,13 @@ export function mergeStoreConfig(
     } else {
       out[key] = o;
     }
+  }
+  // `navigation` is optional and intentionally absent from the defaults so
+  // legacy flat header/footer links keep rendering until menus are saved.
+  if (override.navigation !== undefined) {
+    const nav = override.navigation;
+    out.navigation =
+      nav && typeof nav === 'object' && !Array.isArray(nav) ? nav : undefined;
   }
   return out as unknown as StoreCustomization;
 }

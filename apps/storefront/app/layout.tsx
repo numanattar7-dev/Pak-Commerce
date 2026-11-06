@@ -2,6 +2,7 @@ import './globals.css';
 import type { Metadata } from 'next';
 import Providers from '@/components/Providers';
 import Shell from '@/components/Shell';
+import { SITE_URL } from '@/lib/seo';
 
 export async function generateMetadata(): Promise<Metadata> {
   // Store-level SEO (Customize Store → SEO) — falls back silently on any error
@@ -15,12 +16,13 @@ export async function generateMetadata(): Promise<Metadata> {
       const description =
         cfg?.seo?.metaDescription ||
         'Buy premium Pakistani products online with Cash on Delivery (COD).';
-      return { title, description };
+      return { metadataBase: new URL(SITE_URL), title, description };
     }
   } catch {
     /* fall through to defaults */
   }
   return {
+    metadataBase: new URL(SITE_URL),
     title: 'Pak Commerce Storefront',
     description: 'Buy premium Pakistani products online with Cash on Delivery (COD).',
   };

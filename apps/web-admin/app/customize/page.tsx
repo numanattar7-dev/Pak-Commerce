@@ -1239,6 +1239,11 @@ export default function ThemeEditor() {
                             <>
                               <TextField title="Meta title" value={cfg.seo.metaTitle || ''} onChange={(v) => set('seo', 'metaTitle', v)} />
                               <TextField title="Meta description" value={cfg.seo.metaDescription || ''} onChange={(v) => set('seo', 'metaDescription', v)} area />
+                              <div className="pt-2 mt-1 border-t border-slate-100">
+                                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Blog listing</p>
+                              </div>
+                              <TextField title="Blog SEO title" value={cfg.seo.blogTitle || ''} onChange={(v) => set('seo', 'blogTitle', v)} />
+                              <TextField title="Blog meta description" value={cfg.seo.blogDescription || ''} onChange={(v) => set('seo', 'blogDescription', v)} area />
                             </>
                           )}
                         </div>

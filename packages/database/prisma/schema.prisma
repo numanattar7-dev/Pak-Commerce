@@ -570,6 +570,8 @@ model StorePage {
   title       String
   content     String   @default("")
   isPublished Boolean  @default(false)
+  seoTitle    String?  @db.Text
+  seoDescription String? @db.Text
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -580,7 +582,8 @@ model StorePage {
 // ----------------------------------------------------
 // Reconstructed from verified production schema
 // (Neon backup branch pak-commerce-pre-reconciliation).
-// Exact columns only — do not extend without a migration.
+// Baseline columns match production exactly; the nullable SEO overrides below
+// require additive migration 0003 and must not be deployed without it.
 // ----------------------------------------------------
 
 model BlogPost {
@@ -594,6 +597,9 @@ model BlogPost {
   author      String?  @db.Text
   imageUrl    String?  @db.Text
   isPublished Boolean  @default(false)
+  // M6 SEO overrides — added by additive migration 0003 (not yet applied).
+  seoTitle       String? @db.Text
+  seoDescription String? @db.Text
   publishedAt DateTime? @db.Timestamp(6)
   createdAt   DateTime @default(now()) @db.Timestamp(6)
   updatedAt   DateTime @updatedAt @db.Timestamp(6)

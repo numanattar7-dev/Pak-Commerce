@@ -15,6 +15,7 @@ import { ShippingRulesModule } from './shipping-rules/shipping-rules.module';
 import { PaymentsModule } from './payments/payments.module';
 import { StoreSettingsModule } from './store-settings/store-settings.module';
 import { ThemesModule } from './themes/themes.module';
+import { BlogModule } from './blog/blog.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { ThemesModule } from './themes/themes.module';
     PaymentsModule,
     StoreSettingsModule,
     ThemesModule,
+    BlogModule,
   ],
 })
 export class AppModule {}

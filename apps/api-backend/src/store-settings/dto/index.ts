@@ -27,6 +27,16 @@ export class CreateStorePageDto {
   @IsOptional()
   @IsBoolean()
   isPublished?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  seoTitle?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  seoDescription?: string;
 }
 
 export class UpdateStorePageDto {
@@ -50,4 +60,14 @@ export class UpdateStorePageDto {
   @IsOptional()
   @IsBoolean()
   isPublished?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  seoTitle?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  seoDescription?: string;
 }

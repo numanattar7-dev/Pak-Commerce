@@ -17,6 +17,8 @@ import {
   Music2,
 } from 'lucide-react';
 import type { StoreCustomization } from './config';
+import type { ResolvedNavNode } from './navigation';
+import { resolveNavNodes, legacyToResolved } from './navigation';
 
 export function AnnouncementBar({ cfg }: { cfg: StoreCustomization }) {
   if (cfg.announcement.enabled === false || !cfg.announcement.text) return null;
@@ -39,16 +41,101 @@ type HeaderProps = {
 export function SiteHeader({ cfg, storeName, subdomain, logoUrl, activePath, cartSlot }: HeaderProps) {
   const name = storeName || 'Store';
   const initial = name.trim().charAt(0).toUpperCase() || 'S';
-  const baseNav = [
-    { href: '/', label: 'Home' },
-    { href: '/products', label: 'Shop All' },
-    { href: '/track', label: 'Track Order' },
+  const defaultNav: ResolvedNavNode[] = [
+    { id: 'home', label: 'Home', href: '/', external: false, children: [] },
+    { id: 'products', label: 'Shop All', href: '/products', external: false, children: [] },
+    { id: 'blog', label: 'Journal', href: '/blog', external: false, children: [] },
+    { id: 'track', label: 'Track Order', href: '/track', external: false, children: [] },
   ];
-  const navLinks = [...baseNav, ...(cfg.header.menuLinks || [])];
+  const configured = cfg.navigation?.header;
+  const menuNodes: ResolvedNavNode[] = Array.isArray(configured)
+    ? resolveNavNodes(configured)
+    : [...defaultNav, ...legacyToResolved(cfg.header.menuLinks)];
+
   const activeCls = (active: boolean) =>
     active
       ? 'text-[var(--pk-primary-text)] bg-[var(--pk-primary-soft)]'
       : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50';
+
+  const isActive = (href: string) =>
+    href === '/' ? activePath === '/' : activePath.startsWith(href);
+
+  const renderDesktopChild = (c: ResolvedNavNode, depth: number): React.ReactNode => {
+    const pad = depth === 0 ? 'px-4' : depth === 1 ? 'pl-8 pr-4' : 'pl-12 pr-4';
+    const cls = `block py-2 text-[13px] font-semibold text-slate-700 hover:text-slate-900 hover:bg-slate-50 ${pad}`;
+    return (
+      <React.Fragment key={c.id}>
+        {c.external ? (
+          <a href={c.href} target="_blank" rel="noreferrer" className={cls}>
+            {c.label}
+          </a>
+        ) : (
+          <Link href={c.href} className={cls}>
+            {c.label}
+          </Link>
+        )}
+        {c.children.map((g) => renderDesktopChild(g, depth + 1))}
+      </React.Fragment>
+    );
+  };
+
+  // Desktop dropdown for items with children (hover + keyboard focus-within)
+  const renderDesktopItem = (n: ResolvedNavNode) => {
+    if (n.children.length === 0) {
+      const cls = `px-4 py-2 rounded-lg text-sm font-bold transition ${activeCls(isActive(n.href))}`;
+      return n.external ? (
+        <a key={n.id} href={n.href} target="_blank" rel="noreferrer" className={cls}>
+          {n.label}
+        </a>
+      ) : (
+        <Link key={n.id} href={n.href} className={cls}>
+          {n.label}
+        </Link>
+      );
+    }
+    return (
+      <div key={n.id} className="relative group">
+        <button
+          type="button"
+          aria-haspopup="true"
+          className={`px-4 py-2 rounded-lg text-sm font-bold transition flex items-center gap-1.5 ${activeCls(isActive(n.href))}`}
+        >
+          {n.label}
+          <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 fill-none stroke-current stroke-2" aria-hidden="true">
+            <path d="M6 9l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+        <div className="absolute left-0 top-full z-50 mt-1 min-w-56 rounded-xl border border-slate-200 bg-white shadow-lg py-1 opacity-0 translate-y-1 pointer-events-none group-hover:opacity-100 group-hover:translate-y-0 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto transition">
+          {n.children.slice(0, 24).map((c) => renderDesktopChild(c, 0))}
+        </div>
+      </div>
+    );
+  };
+
+  const renderMobileItem = (n: ResolvedNavNode, depth: number) => {
+    const pad = depth === 0 ? 'px-3 py-1.5' : 'pl-6 pr-3 py-1.5';
+    const base = `${pad} rounded-lg text-xs font-bold transition block whitespace-nowrap`;
+    const cls = `${base} ${activeCls(isActive(n.href))}`;
+    if (n.children.length === 0) {
+      return n.external ? (
+        <a key={n.id} href={n.href} target="_blank" rel="noreferrer" className={cls}>
+          {n.label}
+        </a>
+      ) : (
+        <Link key={n.id} href={n.href} className={cls}>
+          {n.label}
+        </Link>
+      );
+    }
+    return (
+      <details key={n.id} className="py-0.5">
+        <summary className={`${base} ${activeCls(isActive(n.href))} list-none cursor-pointer select-none`}>
+          {n.label}
+        </summary>
+        <div className="pl-3">{n.children.slice(0, 24).map((c) => renderMobileItem(c, depth + 1))}</div>
+      </details>
+    );
+  };
 
   return (
     <header className="sticky top-0 z-40 bg-white/95 backdrop-blur border-b border-slate-200">
@@ -72,39 +159,15 @@ export function SiteHeader({ cfg, storeName, subdomain, logoUrl, activePath, car
           </Link>
 
           <nav className="hidden md:flex items-center gap-1">
-            {navLinks.map((n) => {
-              const active =
-                n.href === '/' ? activePath === '/' : activePath.startsWith(n.href);
-              return (
-                <Link
-                  key={n.href}
-                  href={n.href}
-                  className={`px-4 py-2 rounded-lg text-sm font-bold transition ${activeCls(active)}`}
-                >
-                  {n.label}
-                </Link>
-              );
-            })}
+            {menuNodes.map(renderDesktopItem)}
           </nav>
 
           {cartSlot}
         </div>
 
         {/* mobile nav */}
-        <nav className="md:hidden flex items-center gap-1 pb-2 -mt-1 overflow-x-auto">
-          {navLinks.map((n) => {
-            const active =
-              n.href === '/' ? activePath === '/' : activePath.startsWith(n.href);
-            return (
-              <Link
-                key={n.href}
-                href={n.href}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap ${activeCls(active)}`}
-              >
-                {n.label}
-              </Link>
-            );
-          })}
+        <nav className="md:hidden flex flex-wrap items-center gap-1 pb-2 -mt-1">
+          {menuNodes.map((n) => renderMobileItem(n, 0))}
         </nav>
       </div>
     </header>
@@ -122,6 +185,59 @@ export function SiteFooter({ cfg, storeName, logoUrl }: FooterProps) {
   const initial = name.trim().charAt(0).toUpperCase() || 'S';
   const social = cfg.footer.social;
   const year = new Date().getFullYear();
+  const configuredFooter = cfg.navigation?.footer;
+  const footerConfigured = Array.isArray(configuredFooter);
+  const footerMenu: ResolvedNavNode[] = footerConfigured
+    ? resolveNavNodes(configuredFooter)
+    : legacyToResolved(cfg.footer.quickLinks);
+
+  const renderFooterLink = (n: ResolvedNavNode, indent = false) => (
+    n.external ? (
+      <a key={n.id} href={n.href} target="_blank" rel="noreferrer" className={`hover:text-[var(--pk-accent)] transition ${indent ? 'block pl-3 mt-1' : ''}`}>
+        {n.label}
+      </a>
+    ) : (
+      <Link key={n.id} href={n.href} className={`hover:text-[var(--pk-accent)] transition ${indent ? 'block pl-3 mt-1' : ''}`}>
+        {n.label}
+      </Link>
+    )
+  );
+
+  const renderFooterBranch = (n: ResolvedNavNode, depth: number): React.ReactNode => (
+    <li key={n.id} className={depth > 0 ? 'pl-3 mt-1' : ''}>
+      {renderFooterLink(n, depth > 0)}
+      {n.children.length > 0 && (
+        <ul className="mt-1 space-y-1">{n.children.map((c) => renderFooterBranch(c, depth + 1))}</ul>
+      )}
+    </li>
+  );
+
+  const footerList = footerConfigured ? (
+    footerMenu.length === 0 ? (
+      <li className="text-slate-400">No footer links</li>
+    ) : (
+      footerMenu.map((n) =>
+        n.children.length > 0 ? (
+          <li key={n.id} className="pt-1">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{n.label}</span>
+            <ul className="mt-1.5 space-y-1.5">
+              {n.children.slice(0, 24).map((c) => renderFooterBranch(c, 1))}
+            </ul>
+          </li>
+        ) : (
+          <li key={n.id}>{renderFooterLink(n)}</li>
+        ),
+      )
+    )
+  ) : (
+    <>
+      <li><Link href="/products" className="hover:text-[var(--pk-accent)] transition">Shop All Products</Link></li>
+      <li><Link href="/blog" className="hover:text-[var(--pk-accent)] transition">Journal</Link></li>
+      <li><Link href="/cart" className="hover:text-[var(--pk-accent)] transition">View Cart</Link></li>
+      <li><Link href="/track" className="hover:text-[var(--pk-accent)] transition">Track Your Order</Link></li>
+      {footerMenu.map((n) => <li key={n.id}>{renderFooterLink(n)}</li>)}
+    </>
+  );
 
   return (
     <footer className="bg-slate-900 text-slate-300 mt-20">
@@ -194,20 +310,9 @@ export function SiteFooter({ cfg, storeName, logoUrl }: FooterProps) {
 
         <div>
           <h4 className="text-[11px] font-bold text-white uppercase tracking-widest mb-3">
-            Quick Links
+            {footerConfigured ? 'Menu' : 'Quick Links'}
           </h4>
-          <ul className="space-y-2 text-xs font-medium">
-            <li><Link href="/products" className="hover:text-[var(--pk-accent)] transition">Shop All Products</Link></li>
-            <li><Link href="/cart" className="hover:text-[var(--pk-accent)] transition">View Cart</Link></li>
-            <li><Link href="/track" className="hover:text-[var(--pk-accent)] transition">Track Your Order</Link></li>
-            {(cfg.footer.quickLinks || []).map((l) => (
-              <li key={`${l.label}-${l.href}`}>
-                <Link href={l.href} className="hover:text-[var(--pk-accent)] transition">
-                  {l.label}
-                </Link>
-              </li>
-            ))}
-          </ul>
+          <ul className="space-y-2 text-xs font-medium">{footerList}</ul>
         </div>
 
         <div>

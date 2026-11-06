@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateStorePageDto, UpdateStorePageDto, UpsertStoreSettingsDto } from './dto';
+import { validateNavigationConfig } from './navigation.validation';
 
 const MAX_CONFIG_SIZE = 65536; // 64 KB — rich section/block content needs headroom
 const MAX_PAGE_CONTENT = 20000;
@@ -26,11 +27,16 @@ export class StoreSettingsService {
     };
   }
 
+  private validateNavigation(config: Record<string, unknown>) {
+    validateNavigationConfig(config);
+  }
+
   async updateMine(tenantId: string, dto: UpsertStoreSettingsDto) {
     const json = JSON.stringify(dto.config ?? {});
     if (json.length > MAX_CONFIG_SIZE) {
       throw new BadRequestException('Store settings payload too large');
     }
+    this.validateNavigation(dto.config ?? {});
     // Keep the PUBLISHED theme in the library in sync with the live editor —
     // otherwise "published theme" and the storefront would drift apart.
     const saved = await this.prisma.$transaction(async (tx) => {
@@ -81,7 +87,9 @@ export class StoreSettingsService {
   }
 
   async createPage(tenantId: string, dto: CreateStorePageDto) {
-    const slug = this.slugify(dto.slug || dto.title);
+    const title = dto.title.trim();
+    if (!title) throw new BadRequestException('Title is required');
+    const slug = this.slugify(dto.slug || title);
     await this.assertSlugFree(tenantId, slug);
     if ((dto.content || '').length > MAX_PAGE_CONTENT) {
       throw new BadRequestException('Page content too large');
@@ -90,9 +98,11 @@ export class StoreSettingsService {
       data: {
         tenantId,
         slug,
-        title: dto.title.trim(),
+        title,
         content: dto.content || '',
         isPublished: dto.isPublished ?? false,
+        seoTitle: dto.seoTitle?.trim() || null,
+        seoDescription: dto.seoDescription?.trim() || null,
       },
     });
   }
@@ -100,6 +110,9 @@ export class StoreSettingsService {
   async updatePage(tenantId: string, id: string, dto: UpdateStorePageDto) {
     const page = await this.prisma.storePage.findFirst({ where: { id, tenantId } });
     if (!page) throw new NotFoundException('Page not found');
+    if (dto.title !== undefined && !dto.title.trim()) {
+      throw new BadRequestException('Title is required');
+    }
 
     let slug = page.slug;
     if (dto.slug && dto.slug !== page.slug) {
@@ -113,10 +126,34 @@ export class StoreSettingsService {
     return this.prisma.storePage.update({
       where: { id },
       data: {
-        ...(dto.title ? { title: dto.title.trim() } : {}),
+        ...(dto.title !== undefined ? { title: dto.title.trim() } : {}),
         ...(dto.slug ? { slug } : {}),
         ...(dto.content !== undefined ? { content: dto.content } : {}),
         ...(dto.isPublished !== undefined ? { isPublished: dto.isPublished } : {}),
+        ...(dto.seoTitle !== undefined ? { seoTitle: dto.seoTitle?.trim() || null } : {}),
+        ...(dto.seoDescription !== undefined ? { seoDescription: dto.seoDescription?.trim() || null } : {}),
+      },
+    });
+  }
+
+  async duplicatePage(tenantId: string, id: string) {
+    const page = await this.prisma.storePage.findFirst({ where: { id, tenantId } });
+    if (!page) throw new NotFoundException('Page not found');
+    const base = this.slugify(`${page.slug}-copy`) || 'page-copy';
+    let slug = base;
+    let n = 2;
+    while (await this.prisma.storePage.findFirst({ where: { tenantId, slug } })) {
+      slug = `${base}-${n++}`;
+    }
+    return this.prisma.storePage.create({
+      data: {
+        tenantId,
+        slug,
+        title: `${page.title} (copy)`.slice(0, 80),
+        content: page.content,
+        isPublished: false,
+        seoTitle: page.seoTitle,
+        seoDescription: page.seoDescription,
       },
     });
   }

@@ -84,8 +84,8 @@ const NAV_GROUPS: NavGroup[] = [
     id: 'content',
     title: 'Content',
     items: [
-      { label: 'Pages', icon: FileText, badge: 'M6', disabled: true },
-      { label: 'Blog posts', icon: Newspaper, badge: 'M6', disabled: true },
+      { href: '/pages', label: 'Pages', icon: FileText },
+      { href: '/blog', label: 'Blog posts', icon: Newspaper },
     ],
   },
   {
@@ -93,10 +93,8 @@ const NAV_GROUPS: NavGroup[] = [
     title: 'Online store',
     items: [
       { href: '/themes', label: 'Themes', icon: Palette },
-      { label: 'Pages', icon: FileText, badge: 'M6', disabled: true },
-      { label: 'Navigation', icon: Navigation, badge: 'M6', disabled: true },
-      { label: 'Blog posts', icon: Newspaper, badge: 'M6', disabled: true },
-      { label: 'Preferences', icon: SlidersHorizontal, badge: 'M6', disabled: true },
+      { href: '/navigation', label: 'Navigation', icon: Navigation },
+      { label: 'Preferences', icon: SlidersHorizontal, badge: 'Later', disabled: true },
     ],
   },
   {

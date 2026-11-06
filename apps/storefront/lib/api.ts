@@ -1,5 +1,7 @@
 'use client';
 
+import { FALLBACK_IMAGE, imageUrl } from './media';
+
 // ---------------------------------------------------------------------------
 // Pak Commerce Storefront — public API client
 // All prices/totals are computed SERVER-SIDE from the database; this client
@@ -300,13 +302,10 @@ export function fetchStorePages() {
 
 /** Absolute URL for stored/relative image paths (uploads live on the API :4000). */
 export function imgUrl(src?: string | null): string | null {
-  if (!src) return null;
-  if (/^https?:\/\//i.test(src)) return src;
-  return `${API_BASE}/${src.replace(/^\/+/, '')}`;
+  return imageUrl(src, API_BASE);
 }
 
-export const FALLBACK_IMAGE =
-  'https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=600&q=80';
+export { FALLBACK_IMAGE };
 
 export function formatPKR(n: number | null | undefined) {
   const num = Number(n ?? 0);

@@ -44,6 +44,20 @@ Notes:
 - Uploads (`/uploads`) are served from the instance disk → **ephemeral on Render free tier**; images vanish on redeploy. Fine for staging.
 - Free tier sleeps after 15 min idle → first request cold-starts (~30–60 s).
 
+## Pending schema migrations (not applied to production)
+
+Apply only to a backup branch first, verify, then merge after approval. Deploy application code **after** the columns exist.
+
+1. `packages/database/prisma/migrations/0001_one_published_per_tenant.sql` — M5 partial unique index
+   (`themes."tenantId"` where `status = 'PUBLISHED'`).
+2. `packages/database/prisma/migrations/0002_store_pages_seo.sql` — M6 nullable `seoTitle` /
+   `seoDescription` on `store_pages`.
+3. `packages/database/prisma/migrations/0003_blog_posts_seo.sql` — M6 nullable `seoTitle` /
+   `seoDescription` on `blog_posts`.
+
+`0002` and `0003` are additive and preserve every existing row. The Pages/Blog APIs select these
+columns, so skipping them causes query failures after deployment.
+
 ## 2. Storefront — Vercel (project A)
 
 1. Vercel Dashboard → **Add New → Project** → import the GitHub repo.

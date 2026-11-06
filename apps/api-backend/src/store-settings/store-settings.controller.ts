@@ -74,6 +74,12 @@ export class StorePagesController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Post(':id/duplicate')
+  duplicate(@CurrentUser() user, @Param('id') id: string) {
+    return this.service.duplicatePage(user.tenantId, id);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Put(':id')
   update(@CurrentUser() user, @Param('id') id: string, @Body() dto: UpdateStorePageDto) {
     return this.service.updatePage(user.tenantId, id, dto);
