@@ -345,6 +345,13 @@ export function themeVars(cfg?: StoreCustomization | null): React.CSSProperties 
   const design = resolveDesign(cfg);
   const schemes = getSchemes(cfg);
   const anchor = cfg ?? DEFAULT_CUSTOMIZATION;
+  // Stores whose config predates the scheme system keep the exact colors the
+  // merchant chose for theme.primary/accent — the scheme palette only takes
+  // over once colorSchemes have actually been stored.
+  const csRaw = anchor?.colorSchemes as unknown;
+  const storedSchemes = isPlainObject(csRaw) && Array.isArray((csRaw as Record<string, unknown>).schemes);
+  const legacyPrimary = storedSchemes ? null : /^#[0-9a-fA-F]{6}$/i.test(String(anchor.theme?.primary || '')) ? anchor.theme.primary : null;
+  const legacyAccent = storedSchemes ? null : /^#[0-9a-fA-F]{6}$/i.test(String(anchor.theme?.accent || '')) ? anchor.theme.accent : null;
   return {
     ['--pk-font-heading' as string]: fontStack(design.headingFont),
     ['--pk-font-body' as string]: fontStack(design.bodyFont),
@@ -364,8 +371,8 @@ export function themeVars(cfg?: StoreCustomization | null): React.CSSProperties 
         : 'none',
     // legacy vars keep old storefront components (ProductCard, track band…)
     // looking intentional alongside the scheme system
-    ['--pk-primary' as string]: schemes[0].colors.button,
-    ['--pk-accent' as string]: schemes[1]?.colors.accent ?? schemes[0].colors.accent,
+    ['--pk-primary' as string]: legacyPrimary ?? schemes[0].colors.button,
+    ['--pk-accent' as string]: legacyAccent ?? schemes[1]?.colors.accent ?? schemes[0].colors.accent,
     ['--pk-announcement' as string]: schemeFor(anchor, 'announcement').colors.background,
     ['--pk-announcement-text' as string]: schemeFor(anchor, 'announcement').colors.text,
   } as React.CSSProperties;
