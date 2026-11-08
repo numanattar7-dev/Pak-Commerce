@@ -128,10 +128,6 @@ export async function apiUpload<T = any>(path: string, file: File): Promise<T> {
       body: form,
     });
   let res = await send(API_BASE);
-  if (!res.ok || !API_BASE.includes('127.0.0.1')) {
-    // also tolerate IPv6-only binding by retrying via localhost on failure
-    if (res.status === 0) res = await send('http://localhost:4000');
-  }
   if (!res.ok) {
     let msg = res.statusText;
     let raw: unknown;

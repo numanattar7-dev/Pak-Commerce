@@ -2,7 +2,7 @@
 // client in `lib/api.ts` re-uses `imageUrl` with its runtime base.
 
 export const DEFAULT_API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE || 'http://127.0.0.1:4000';
+  process.env.NEXT_PUBLIC_API_BASE || 'https://pak-commerce-api.onrender.com';
 
 export const FALLBACK_IMAGE =
   'https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=600&q=80';
