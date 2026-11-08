@@ -17,6 +17,7 @@ import {
   Music2,
 } from 'lucide-react';
 import type { StoreCustomization } from './config';
+import { sanitizeLinkRows } from './config';
 import type { ResolvedNavNode } from './navigation';
 import { resolveNavNodes, legacyToResolved } from './navigation';
 
@@ -50,7 +51,7 @@ export function SiteHeader({ cfg, storeName, subdomain, logoUrl, activePath, car
   const configured = cfg.navigation?.header;
   const menuNodes: ResolvedNavNode[] = Array.isArray(configured)
     ? resolveNavNodes(configured)
-    : [...defaultNav, ...legacyToResolved(cfg.header.menuLinks)];
+    : [...defaultNav, ...legacyToResolved(sanitizeLinkRows(cfg.header?.menuLinks))];
 
   const activeCls = (active: boolean) =>
     active
@@ -189,7 +190,7 @@ export function SiteFooter({ cfg, storeName, logoUrl }: FooterProps) {
   const footerConfigured = Array.isArray(configuredFooter);
   const footerMenu: ResolvedNavNode[] = footerConfigured
     ? resolveNavNodes(configuredFooter)
-    : legacyToResolved(cfg.footer.quickLinks);
+    : legacyToResolved(sanitizeLinkRows(cfg.footer?.quickLinks));
 
   const renderFooterLink = (n: ResolvedNavNode, indent = false) => (
     n.external ? (

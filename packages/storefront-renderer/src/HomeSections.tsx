@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import type { StoreCustomization } from './config';
 import type { PkSection } from './sections';
+import { sanitizeHomeSections } from './sections';
 import {
   isAllowedPreviewOrigin,
   isPreviewSelectMessage,
@@ -78,7 +79,8 @@ export default function HomeSections({ cfg, products, loading, renderProduct, re
     }
   };
 
-  const sections = cfg.home?.sections ?? [];
+  // Stored config is untrusted — only iterate sanitised sections.
+  const sections = sanitizeHomeSections(cfg.home?.sections);
 
   const frame = (s: PkSection, node: React.ReactNode, keyExtra?: React.Key) => (
     <div

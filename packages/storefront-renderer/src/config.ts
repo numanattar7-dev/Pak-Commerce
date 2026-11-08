@@ -8,8 +8,32 @@
 import type { PkSection } from './sections';
 import { DEFAULT_HOME_SECTIONS } from './sections';
 import type { NavNode } from './navigation';
+import { asArray, isPlainObject, str } from './internal';
 
 export type LinkRow = { label: string; href: string };
+
+/**
+ * Normalise a stored `header.menuLinks` / `footer.quickLinks` value into plain
+ * { label, href } rows. Accepts the legacy array format; plain objects are
+ * recovered as collections (see asArray) so nothing merchant-authored is lost.
+ * Non-scalar labels/hrefs and non-object entries are dropped; everything else
+ * is preserved verbatim (trimmed and length-bounded). Never throws.
+ *
+ * The stored configuration itself is NEVER modified by this — callers get a
+ * sanitised view; the saved config is only rewritten when the merchant
+ * explicitly saves, and even then only in its canonical shape.
+ */
+export function sanitizeLinkRows(value: unknown): LinkRow[] {
+  const out: LinkRow[] = [];
+  for (const raw of asArray(value).slice(0, 50)) {
+    if (!isPlainObject(raw)) continue;
+    const label = str(raw.label, 80);
+    const href = str(raw.href, 500);
+    if (!label && !href) continue; // fully-empty junk row carries no data
+    out.push({ label, href });
+  }
+  return out;
+}
 
 export type StoreCustomization = {
   branding: { logoUrl?: string; faviconUrl?: string; tagline?: string };

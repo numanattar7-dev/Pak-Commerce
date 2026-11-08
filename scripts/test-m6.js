@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// M6 verification — pages/blog tenant isolation, public visibility,
+// M6 verification - pages/blog tenant isolation, public visibility,
 // navigation nesting/URL validation, and migration SQL shape.
 // Runs against compiled backend output + the storefront-renderer source
 // (transpiled in-memory). No database, network or production access.
@@ -293,15 +293,149 @@ function readSql(file) {
   });
 
   // -------------------------------------------------------------------------
+  console.log('\nLegacy menu & home-section hardening');
+  // -------------------------------------------------------------------------
+  const internal = loadTsModule(
+    path.join(ROOT, 'packages', 'storefront-renderer', 'src', 'internal.ts'),
+  );
+  const sectionsHardened = loadTsModule(
+    path.join(ROOT, 'packages', 'storefront-renderer', 'src', 'sections.ts'),
+    { './internal': internal },
+  );
+  const { sanitizeLinkRows, DEFAULT_CUSTOMIZATION, mergeStoreConfig } = loadTsModule(
+    path.join(ROOT, 'packages', 'storefront-renderer', 'src', 'config.ts'),
+    { './sections': sectionsHardened, './internal': internal },
+  );
+  const { sanitizeHomeSections } = sectionsHardened;
+
+  const EXOTIC = [undefined, null, 0, '', 'menu', [1, 'a', {}, { label: 'L', href: '/p' }], { 0: null }, { 0: { label: 'A', href: '/a' }, length: {} }, true];
+
+  await test('header links: missing/null/string/number/bool/object are all safe', () => {
+    for (const v of [undefined, null, 'menu', 42, true, {}]) {
+      const rows = sanitizeLinkRows(v);
+      assert.ok(Array.isArray(rows), JSON.stringify(v));
+      const links = ['Home', 'Shop All', 'Journal', 'Track Order'].concat(
+        legacyToResolved(rows).map((l) => l.label),
+      );
+      assert.strictEqual(links.length, 4);
+    }
+  });
+
+  await test('footer quickLinks pipeline never throws on exotic shapes', () => {
+    for (const v of EXOTIC) {
+      assert.doesNotThrow(() => legacyToResolved(sanitizeLinkRows(v)), JSON.stringify(v));
+      assert.ok(Array.isArray(legacyToResolved(sanitizeLinkRows(v))));
+    }
+  });
+
+  await test('object-map link lists are recovered in insertion order', () => {
+    const rows = sanitizeLinkRows({ 0: { label: 'About', href: '/about' }, 1: { label: 'FAQ', href: '/p/faq' }, length: 99 });
+    assert.deepStrictEqual(rows, [
+      { label: 'About', href: '/about' },
+      { label: 'FAQ', href: '/p/faq' },
+    ]);
+  });
+
+  await test('valid rows survive; mixed junk is dropped; numeric scalars coerced', () => {
+    const rows = sanitizeLinkRows([
+      { label: ' Track ', href: '/track' },
+      'junk',
+      42,
+      null,
+      { label: '  ', href: '' },
+      { label: 'B', href: '/b' },
+    ]);
+    assert.deepStrictEqual(rows, [
+      { label: 'Track', href: '/track' },
+      { label: 'B', href: '/b' },
+    ]);
+    assert.deepStrictEqual(sanitizeLinkRows([{ label: 10, href: 20 }]), [{ label: '10', href: '20' }]);
+  });
+
+  await test('overlong rows are trimmed and row count is capped', () => {
+    const long = sanitizeLinkRows([{ label: 'x'.repeat(200), href: '/' + 'y'.repeat(600) }]);
+    assert.strictEqual(long[0].label.length, 80);
+    assert.strictEqual(long[0].href.length, 500);
+    const many = sanitizeLinkRows(Array.from({ length: 60 }, (_, i) => ({ label: 'L' + i, href: '/p' + i })));
+    assert.strictEqual(many.length, 50);
+  });
+
+  await test('unsafe stored destinations never reach the rendered list', () => {
+    const stored = [
+      { label: 'Evil', href: 'javascript:alert(1)' },
+      { label: 'Proto', href: '//evil.example' },
+      { label: 'OK', href: '/track' },
+      { label: 'Out', href: 'https://example.com' },
+    ];
+    assert.deepStrictEqual(
+      legacyToResolved(sanitizeLinkRows(stored)).map((l) => l.label),
+      ['OK', 'Out'],
+    );
+  });
+
+  await test('sanitising never mutates the stored value', () => {
+    const stored = { 0: { label: 'A', href: '/a' }, length: 1 };
+    sanitizeLinkRows(stored);
+    assert.deepStrictEqual(Object.keys(stored), ['0', 'length']);
+    assert.strictEqual(stored['0'].label, 'A');
+    const arr = [{ label: 'X', href: '/x' }];
+    const out = sanitizeLinkRows(arr);
+    assert.strictEqual(arr.length, 1);
+    assert.notStrictEqual(out[0], arr[0]);
+  });
+
+  await test('mergeStoreConfig passes a malformed stored menu through untouched', () => {
+    const junk = { 0: { label: 'A', href: '/a' }, length: 1 };
+    const merged = mergeStoreConfig(DEFAULT_CUSTOMIZATION, { header: { menuLinks: junk } });
+    assert.strictEqual(merged.header.menuLinks, junk, 'stored reference must survive the merge untouched');
+    const mergedFooter = mergeStoreConfig(DEFAULT_CUSTOMIZATION, { footer: { quickLinks: 'bogus' } });
+    assert.strictEqual(mergedFooter.footer.quickLinks, 'bogus');
+  });
+
+  await test('home.sections missing/null/bool/string/number normalise to []', () => {
+    for (const v of [undefined, null, true, 'hero', 12]) {
+      assert.deepStrictEqual(sanitizeHomeSections(v), []);
+    }
+  });
+
+  await test('home.sections object map is recovered in order, junk entries dropped', () => {
+    const out = sanitizeHomeSections({
+      0: { id: 'a', type: 'hero', enabled: true, settings: {}, blocks: [] },
+      1: 'junk-entry',
+      2: { id: 'b', type: 'faq', blocks: { 0: { id: 'q', enabled: true, settings: { question: 'Q', answer: 'A' } }, length: 1 }, settings: 'junk' },
+      length: 42,
+    });
+    assert.deepStrictEqual(out.map((s) => s.id), ['a', 'b']);
+    assert.deepStrictEqual(out[1].blocks, [{ id: 'q', enabled: true, settings: { question: 'Q', answer: 'A' } }]);
+    assert.deepStrictEqual(out[1].settings, {});
+  });
+
+  await test('unknown-but-plausible section types are preserved, not deleted', () => {
+    const out = sanitizeHomeSections([
+      { id: 'x', type: 'mysteryBlock', enabled: false, settings: 'junk', blocks: 'junk' },
+    ]);
+    assert.strictEqual(out.length, 1);
+    assert.strictEqual(out[0].type, 'mysteryBlock');
+    assert.strictEqual(out[0].enabled, false);
+    assert.deepStrictEqual(out[0].settings, {});
+    assert.deepStrictEqual(out[0].blocks, []);
+  });
+
+  await test('faq blocks survive the full sanitise -> render pipeline without throwing', () => {
+    const out = sanitizeHomeSections([
+      { id: 'f', type: 'faq', settings: { heading: 'FAQ' }, blocks: [{ id: 'q1', settings: { question: 'Q', answer: 'A' } }, 'junk', null] },
+    ]);
+    const faq = out[0];
+    const visible = faq.blocks.filter((b) => b.enabled && (b.settings.question || b.settings.answer));
+    assert.strictEqual(visible.length, 1);
+    assert.strictEqual(String(visible[0].settings.question), 'Q');
+  });
+
+  // -------------------------------------------------------------------------
   console.log('\nConfig merge — legacy menus preserved');
   // -------------------------------------------------------------------------
-  const sections = loadTsModule(
-    path.join(ROOT, 'packages', 'storefront-renderer', 'src', 'sections.ts'),
-  );
-  const { DEFAULT_CUSTOMIZATION, mergeStoreConfig } = loadTsModule(
-    path.join(ROOT, 'packages', 'storefront-renderer', 'src', 'config.ts'),
-    { './sections': sections },
-  );
+  // (DEFAULT_CUSTOMIZATION and mergeStoreConfig are loaded above — reuse them.)
+
 
   await test('a config without navigation does not invent one (legacy links keep rendering)', () => {
     const merged = mergeStoreConfig(DEFAULT_CUSTOMIZATION, {
@@ -324,7 +458,7 @@ function readSql(file) {
   });
 
   // -------------------------------------------------------------------------
-  console.log('\nBlog service — public visibility');
+  console.log('\nBlog service - public visibility');
   // -------------------------------------------------------------------------
   const { BlogService } = require(path.join(DIST, 'blog', 'blog.service.js'));
 
@@ -519,7 +653,7 @@ function readSql(file) {
   });
 
   // -------------------------------------------------------------------------
-  console.log('\nPages service — tenant isolation and public visibility');
+  console.log('\nPages service - tenant isolation and public visibility');
   // -------------------------------------------------------------------------
   const { StoreSettingsService } = require(path.join(
     DIST,

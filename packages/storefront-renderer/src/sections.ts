@@ -5,6 +5,8 @@
 // same definitions. Add a new section type here, and it works in both.
 // ---------------------------------------------------------------------------
 
+import { asArray, isPlainObject, str } from './internal';
+
 export type PkSectionType =
   | 'hero'
   | 'features'
@@ -191,3 +193,57 @@ export const DEFAULT_HOME_SECTIONS: PkSection[] = [
   { id: 'home-features', type: 'features', enabled: true, settings: {}, blocks: [] },
   { id: 'home-featured', type: 'featuredProducts', enabled: true, settings: {}, blocks: [] },
 ];
+
+const KNOWN_SECTION_TYPES = new Set<string>([
+  'hero',
+  'features',
+  'featuredProducts',
+  'richText',
+  'imageWithText',
+  'faq',
+]);
+
+/**
+ * Normalise a stored `home.sections` value into renderable {@link PkSection}s.
+ *
+ * - Arrays pass through; plain objects are recovered as collections so a
+ *   serialised map like {"0": …, "1": …} is not lost (see asArray).
+ * - Every entry that is a plain object is KEPT — unknown section types are
+ *   preserved verbatim so nothing merchant-authored is silently discarded;
+ *   the storefront renders them as nothing and the editor shows them as an
+ *   "unsupported section" row that can still be reordered, hidden or deleted.
+ * - `type` must be a bounded string; `id` is synthesised when missing;
+ *   `settings`/`blocks[].settings` are deep-copied plain objects (non-object
+ *   junk becomes {}); `enabled` defaults to true except explicit `false`.
+ * - Never throws; never mutates the stored configuration.
+ */
+export function sanitizeHomeSections(value: unknown): PkSection[] {
+  const out: PkSection[] = [];
+  for (const raw of asArray(value).slice(0, 40)) {
+    if (!isPlainObject(raw)) continue;
+    const type = str(raw.type, 60);
+    if (!type) continue;
+    const id = str(raw.id, 80) || `sec-${out.length + 1}`;
+    const settings = isPlainObject(raw.settings) ? { ...raw.settings } : {};
+    const blocks: PkBlock[] = [];
+    for (const b of asArray(raw.blocks).slice(0, 40)) {
+      if (!isPlainObject(b)) continue;
+      blocks.push({
+        id: str(b.id, 80) || `blk-${blocks.length + 1}`,
+        enabled: b.enabled !== false,
+        settings: isPlainObject(b.settings) ? { ...b.settings } : {},
+      });
+    }
+    out.push({
+      id,
+      // Unknown types survive verbatim — see doc comment above.
+      type: type as PkSectionType,
+      enabled: raw.enabled !== false,
+      settings,
+      blocks,
+    });
+  }
+  return out;
+}
+
+export { KNOWN_SECTION_TYPES };
