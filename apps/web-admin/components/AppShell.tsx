@@ -10,7 +10,6 @@ import {
   Tag,
   Users,
   CreditCard,
-  Palette,
   Settings,
   Webhook,
   Store,
@@ -20,10 +19,7 @@ import {
   ChevronDown,
   BarChart3,
   Megaphone,
-  FileText,
   Newspaper,
-  Navigation,
-  SlidersHorizontal,
 } from 'lucide-react';
 import { getToken, clearToken, getCurrentUser, getApiBase } from '@/lib/api';
 
@@ -83,19 +79,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     id: 'content',
     title: 'Content',
-    items: [
-      { href: '/pages', label: 'Pages', icon: FileText },
-      { href: '/blog', label: 'Blog posts', icon: Newspaper },
-    ],
-  },
-  {
-    id: 'online-store',
-    title: 'Online store',
-    items: [
-      { href: '/themes', label: 'Themes', icon: Palette },
-      { href: '/navigation', label: 'Navigation', icon: Navigation },
-      { label: 'Preferences', icon: SlidersHorizontal, badge: 'Later', disabled: true },
-    ],
+    items: [{ href: '/blog', label: 'Blog posts', icon: Newspaper }],
   },
   {
     id: 'settings',
