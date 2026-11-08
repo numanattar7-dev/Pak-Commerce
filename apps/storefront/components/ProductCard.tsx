@@ -41,7 +41,14 @@ export default function ProductCard({ product }: { product: StoreProduct }) {
   };
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-xl transition-all group flex flex-col justify-between">
+    <div
+      className="overflow-hidden group flex flex-col justify-between transition-all bg-[var(--pk-page-bg,#fff)]"
+      style={{
+        borderRadius: 'var(--pk-radius, 16px)',
+        border: '1px solid var(--pk-card-border, #e5e7eb)',
+        boxShadow: 'var(--pk-card-shadow, 0 1px 3px rgba(15, 23, 42, 0.08))',
+      }}
+    >
       <div>
         <Link href={`/products/${product.slug}`} className="block relative aspect-[4/5] bg-slate-100 overflow-hidden">
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -93,17 +100,24 @@ export default function ProductCard({ product }: { product: StoreProduct }) {
         </div>
 
         {added ? (
-          <span className="bg-[var(--pk-primary-soft)] text-[var(--pk-primary-text)] text-xs font-bold px-4 py-2.5 rounded-xl flex items-center gap-1.5">
+          <span
+            className="bg-[var(--pk-primary-soft)] text-[var(--pk-primary-text)] text-xs font-bold px-4 py-2.5 flex items-center gap-1.5"
+            style={{ borderRadius: 'var(--pk-button-radius, 12px)' }}
+          >
             <Check className="w-3.5 h-3.5" /> Added
           </span>
         ) : !inStock ? (
-          <span className="bg-slate-100 text-slate-400 text-xs font-bold px-4 py-2.5 rounded-xl cursor-not-allowed">
+          <span
+            className="bg-slate-100 text-slate-400 text-xs font-bold px-4 py-2.5 cursor-not-allowed"
+            style={{ borderRadius: 'var(--pk-button-radius, 12px)' }}
+          >
             Sold out
           </span>
         ) : singleVariant ? (
           <button
             onClick={handleAdd}
-            className="hover:bg-[var(--pk-primary-dark)] text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow-sm transition flex items-center gap-1.5"
+            className="hover:bg-[var(--pk-primary-dark)] text-white text-xs font-bold px-4 py-2.5 shadow-sm transition flex items-center gap-1.5"
+            style={{ borderRadius: 'var(--pk-button-radius, 12px)' }}
           >
             <ShoppingBag className="w-3.5 h-3.5" />
             <span>Add</span>

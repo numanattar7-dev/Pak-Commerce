@@ -27,18 +27,40 @@ const ASSET_EXTS: Record<string, string> = {
   '.woff2': 'font/woff2',
 };
 
-const SECTION_TYPES = new Set(['hero', 'features', 'featuredProducts', 'richText', 'imageWithText', 'faq']);
+const SECTION_TYPES = new Set([
+  'hero',
+  'features',
+  'featuredProducts',
+  'productGrid',
+  'productCards',
+  'richText',
+  'imageWithText',
+  'faq',
+]);
 
-// settings keys allowed per section type (everything else is rejected)
+// settings keys allowed per section type (everything else is rejected).
+// `schemeId` is allowed on every type (Shopify-style per-section scheme).
 const SECTION_SETTING_KEYS: Record<string, Set<string>> = {
-  hero: new Set([]),
-  features: new Set([]),
-  featuredProducts: new Set([]),
-  richText: new Set(['heading', 'body', 'align']),
-  imageWithText: new Set(['imageUrl', 'heading', 'body', 'ctaText', 'ctaLink', 'imageSide']),
-  faq: new Set(['heading']),
+  hero: new Set(['variant', 'schemeId']),
+  features: new Set(['variant', 'schemeId']),
+  featuredProducts: new Set(['variant', 'schemeId']),
+  productGrid: new Set(['heading', 'subheading', 'limit', 'columns', 'viewAll', 'schemeId']),
+  productCards: new Set(['limit', 'scroll', 'viewAll', 'schemeId']),
+  richText: new Set(['heading', 'body', 'align', 'schemeId']),
+  imageWithText: new Set(['imageUrl', 'heading', 'body', 'ctaText', 'ctaLink', 'imageSide', 'schemeId']),
+  faq: new Set(['heading', 'schemeId']),
 };
 const FAQ_BLOCK_KEYS = new Set(['question', 'answer']);
+
+const SCHEME_COLOR_KEYS = new Set([
+  'background', 'text', 'heading', 'accent', 'button',
+  'buttonText', 'secondaryButton', 'secondaryButtonText', 'border',
+]);
+
+const FONT_CHOICES = new Set(['system', 'grotesk', 'serif', 'rounded', 'mono', 'slab']);
+
+const HERO_VARIANTS = new Set(['split', 'overlay', 'minimal', 'banner', 'editorial']);
+const FEATURES_VARIANTS = new Set(['row', 'cards', 'pill']);
 
 export interface ThemeAssetInput {
   filename: string;
@@ -168,7 +190,7 @@ export function validateThemeZip(buffer: Buffer): ThemeValidationResult {
   const cfg = manifest.config as Record<string, unknown>;
   const errorsBeforeSectionCheck = errors.length;
   const allowedTop = new Set([
-    'branding', 'theme', 'announcement', 'hero', 'sections', 'home',
+    'branding', 'theme', 'colorSchemes', 'style', 'announcement', 'hero', 'sections', 'home',
     'header', 'footer', 'payments', 'checkout', 'seo',
   ]);
   for (const key of Object.keys(cfg)) {
@@ -197,12 +219,67 @@ export function validateThemeZip(buffer: Buffer): ThemeValidationResult {
     }
   }
 
+  if (cfg.colorSchemes !== undefined) {
+    if (
+      !isObject(cfg.colorSchemes) ||
+      !Array.isArray((cfg.colorSchemes as Record<string, unknown>).schemes)
+    ) {
+      errors.push('colorSchemes.schemes must be an array');
+    } else {
+      const list = (cfg.colorSchemes as Record<string, unknown>).schemes as unknown[];
+      if (list.length > 5) errors.push('colorSchemes.schemes allows at most 5 schemes');
+      list.forEach((s, i) => {
+        if (!isObject(s)) {
+          errors.push(`colorSchemes.schemes[${i}] must be an object`);
+          return;
+        }
+        if (s.id !== undefined && (!str(s.id, 24) || !/^[a-zA-Z0-9-]{2,24}$/.test(s.id as string))) {
+          errors.push(`colorSchemes.schemes[${i}].id must be 2–24 chars of letters/numbers/dashes`);
+        }
+        if (s.name !== undefined && !str(s.name, 40)) errors.push(`colorSchemes.schemes[${i}].name max 40 chars`);
+        if (s.colors !== undefined) {
+          if (!isObject(s.colors)) errors.push(`colorSchemes.schemes[${i}].colors must be an object`);
+          else {
+            for (const [k, v] of Object.entries(s.colors)) {
+              if (!SCHEME_COLOR_KEYS.has(k)) errors.push(`colorSchemes.schemes[${i}].colors.${k} is unknown`);
+              else if (!isSafeColor(v)) errors.push(`colorSchemes.schemes[${i}].colors.${k} must be #RRGGBB`);
+            }
+          }
+        }
+      });
+    }
+  }
+
+  if (cfg.style !== undefined) {
+    if (!isObject(cfg.style)) errors.push('style must be an object');
+    else {
+      const s = cfg.style;
+      for (const k of ['headingFont', 'bodyFont'] as const) {
+        if (s[k] !== undefined && !FONT_CHOICES.has(s[k] as string)) errors.push(`style.${k} is not a known font choice`);
+      }
+      if (s.radius !== undefined && !numIn(s.radius, 0, 40)) errors.push('style.radius must be 0–40');
+      for (const [k, values] of [
+        ['buttonShape', ['pill', 'rounded', 'square']],
+        ['cardStyle', ['shadow', 'border', 'flat']],
+        ['heroVariant', ['split', 'overlay', 'minimal', 'banner', 'editorial']],
+        ['featuresVariant', ['row', 'cards', 'pill']],
+        ['headerLayout', ['classic', 'centered']],
+        ['footerLayout', ['classic', 'compact']],
+        ['spacing', ['compact', 'normal', 'roomy']],
+      ] as ReadonlyArray<readonly [string, readonly string[]]>) {
+        if (s[k] !== undefined && !values.includes(s[k] as string)) errors.push(`style.${k} must be one of ${values.join(', ')}`);
+      }
+      if (s.uppercaseHeadings !== undefined && !bool(s.uppercaseHeadings)) errors.push('style.uppercaseHeadings must be boolean');
+    }
+  }
+
   if (cfg.announcement !== undefined) {
     if (!isObject(cfg.announcement)) errors.push('announcement must be an object');
     else {
       const a = cfg.announcement;
       if (a.enabled !== undefined && !bool(a.enabled)) errors.push('announcement.enabled must be boolean');
       if (a.text !== undefined && !str(a.text, 280)) errors.push('announcement.text max 280 chars');
+      if (a.schemeId !== undefined && !str(a.schemeId, 24)) errors.push('announcement.schemeId max 24 chars');
     }
   }
 
@@ -218,6 +295,7 @@ export function validateThemeZip(buffer: Buffer): ThemeValidationResult {
         errors.push('hero.imageUrl must be an absolute path or http(s) URL');
       }
       if (h.ctaLink !== undefined && !isSafeLink(h.ctaLink)) errors.push('hero.ctaLink must be an absolute path or http(s) URL');
+      if (h.schemeId !== undefined && !str(h.schemeId, 24)) errors.push('hero.schemeId max 24 chars');
     }
   }
 
@@ -236,6 +314,9 @@ export function validateThemeZip(buffer: Buffer): ThemeValidationResult {
       if (!isObject(cfg[key])) errors.push(`${key} must be an object`);
       else {
         const frag = cfg[key] as Record<string, unknown>;
+        if (frag.schemeId !== undefined && (!str(frag.schemeId, 24) || !/^[a-zA-Z0-9-]{2,24}$/.test(frag.schemeId as string))) {
+          errors.push(`${key}.schemeId must be 2–24 chars of letters/numbers/dashes`);
+        }
         for (const listKey of ['menuLinks', 'quickLinks']) {
           if (frag[listKey] !== undefined) {
             if (!Array.isArray(frag[listKey]) || (frag[listKey] as unknown[]).length > 20) {
@@ -313,8 +394,35 @@ export function validateThemeZip(buffer: Buffer): ThemeValidationResult {
             for (const k of Object.keys(sec.settings)) {
               if (!allowed.has(k)) errors.push(`home.sections[${i}].settings.${k} is not supported`);
             }
+            const s = sec.settings as Record<string, unknown>;
+            // schemeId references must look like scheme ids
+            if (s.schemeId !== undefined && (!str(s.schemeId, 24) || !/^[a-zA-Z0-9-]{2,24}$/.test(s.schemeId as string))) {
+              errors.push(`home.sections[${i}].settings.schemeId must be 2–24 chars`);
+            }
+            if (type === 'hero' && s.variant !== undefined && !HERO_VARIANTS.has(s.variant as string)) {
+              errors.push(`home.sections[${i}].settings.variant must be one of split, overlay, minimal, banner, editorial`);
+            }
+            if (type === 'features' && s.variant !== undefined && !FEATURES_VARIANTS.has(s.variant as string)) {
+              errors.push(`home.sections[${i}].settings.variant must be one of row, cards, pill`);
+            }
+            if (type === 'productGrid' || type === 'productCards') {
+              if (s.limit !== undefined && !numIn(s.limit, 1, 24)) errors.push(`home.sections[${i}].settings.limit must be 1–24`);
+            }
+            if (type === 'productGrid') {
+              if (s.columns !== undefined && !['2', '3', '4'].includes(s.columns as string)) {
+                errors.push(`home.sections[${i}].settings.columns must be "2", "3" or "4"`);
+              }
+              if (s.heading !== undefined && !str(s.heading, 300)) errors.push(`home.sections[${i}].settings.heading max 300 chars`);
+              if (s.subheading !== undefined && !str(s.subheading, 600)) errors.push(`home.sections[${i}].settings.subheading max 600 chars`);
+              if (s.viewAll !== undefined && !bool(s.viewAll)) errors.push(`home.sections[${i}].settings.viewAll must be boolean`);
+            }
+            if (type === 'productCards') {
+              if (s.scroll !== undefined && !['horizontal', 'grid'].includes(s.scroll as string)) {
+                errors.push(`home.sections[${i}].settings.scroll must be "horizontal" or "grid"`);
+              }
+              if (s.viewAll !== undefined && !bool(s.viewAll)) errors.push(`home.sections[${i}].settings.viewAll must be boolean`);
+            }
             if (type === 'richText') {
-              const s = sec.settings as Record<string, unknown>;
               if (s.align !== undefined && !['left', 'center'].includes(s.align as string)) {
                 errors.push(`home.sections[${i}].settings.align must be "left" or "center"`);
               }
@@ -322,7 +430,6 @@ export function validateThemeZip(buffer: Buffer): ThemeValidationResult {
               if (s.body !== undefined && !str(s.body, 4000)) errors.push(`home.sections[${i}].settings.body max 4000 chars`);
             }
             if (type === 'imageWithText') {
-              const s = sec.settings as Record<string, unknown>;
               if (s.imageUrl !== undefined && s.imageUrl !== '' && !isSafeLink(s.imageUrl)) {
                 errors.push(`home.sections[${i}].settings.imageUrl must be an absolute path or http(s) URL`);
               }
@@ -331,8 +438,8 @@ export function validateThemeZip(buffer: Buffer): ThemeValidationResult {
                 errors.push(`home.sections[${i}].settings.imageSide must be "left" or "right"`);
               }
             }
-            if (type === 'faq' && s_is(sec.settings, 'heading') !== undefined && !str(sec.settings.heading, 300)) {
-              errors.push(`home.sections[${i}].settings.heading max 300 chars`);
+            if (type === 'faq') {
+              if (s.heading !== undefined && !str(s.heading, 300)) errors.push(`home.sections[${i}].settings.heading max 300 chars`);
             }
           }
         }

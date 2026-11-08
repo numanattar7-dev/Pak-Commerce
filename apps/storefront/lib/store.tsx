@@ -18,6 +18,7 @@ import {
   StoreCustomization,
   DEFAULT_CUSTOMIZATION,
   mergeStoreConfig,
+  themeVars,
   PREVIEW_MESSAGE_TYPE,
   isAllowedPreviewOrigin,
 } from '@pak-commerce/storefront-renderer';
@@ -99,11 +100,16 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     load();
   }, [load]);
 
-  // Apply the merchant's theme colors as CSS variables + favicon
+  // Apply the merchant's theme design tokens + scheme palette as CSS
+  // variables on <html> (fonts, radius, page background, legacy brand vars,
+  // announcement colors) + favicon. Every section additionally carries its
+  // own scoped scheme vars from the renderer.
   useEffect(() => {
     const root = document.documentElement;
-    root.style.setProperty('--pk-primary', customization.theme.primary || '#059669');
-    root.style.setProperty('--pk-accent', customization.theme.accent || '#0d9488');
+    const vars = themeVars(customization) as Record<string, string>;
+    for (const [name, value] of Object.entries(vars)) {
+      if (typeof value === 'string' && value) root.style.setProperty(name, value);
+    }
     if (customization.branding.faviconUrl) {
       const fav = customization.branding.faviconUrl.startsWith('http')
         ? customization.branding.faviconUrl

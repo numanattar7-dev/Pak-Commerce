@@ -10,6 +10,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { validateThemeZip } from './theme-zip.util';
 import { THEME_LIBRARY_PRESETS } from './theme-presets';
+import { THEME_LIBRARY_V1_JSON } from './theme-presets-v1';
 
 const MAX_NAME = 80;
 const THEME_VERSION_LABEL_MAX = 120;
@@ -72,37 +73,102 @@ export class ThemesService {
       where: { tenantId, source: 'SYSTEM_LIBRARY' },
       select: { id: true },
     });
-    if (installed) return;
-    for (const preset of THEME_LIBRARY_PRESETS) {
-      const exists = await this.prisma.theme.findFirst({
-        where: { tenantId, name: preset.name },
-        select: { id: true },
-      });
-      if (exists) continue; // merchant already has a theme with this name
-      const theme = await this.prisma.theme.create({
-        data: {
-          id: randomUUID(),
-          tenantId,
-          name: preset.name,
-          status: 'UNPUBLISHED',
-          source: 'SYSTEM_LIBRARY',
-          configJson: JSON.stringify(preset.config),
-        },
-      });
-      await this.createVersion(tenantId, theme.id, `Installed from theme library`);
+    if (!installed) {
+      for (const preset of THEME_LIBRARY_PRESETS) {
+        const exists = await this.prisma.theme.findFirst({
+          where: { tenantId, name: preset.name },
+          select: { id: true },
+        });
+        if (exists) continue; // merchant already has a theme with this name
+        const theme = await this.prisma.theme.create({
+          data: {
+            id: randomUUID(),
+            tenantId,
+            name: preset.name,
+            status: 'UNPUBLISHED',
+            source: 'SYSTEM_LIBRARY',
+            configJson: JSON.stringify(preset.config),
+          },
+        });
+        await this.createVersion(tenantId, theme.id, `Installed from theme library`);
+      }
+      this.logger.log(`Theme library installed: tenant=${tenantId} themes=${THEME_LIBRARY_PRESETS.length}`);
     }
-    this.logger.log(`Theme library installed: tenant=${tenantId} themes=${THEME_LIBRARY_PRESETS.length}`);
+    // Refresh designs for stores that shipped the ORIGINAL presets.
+    await this.refreshThemeLibrary(tenantId);
+  }
+
+  /**
+   * Upgrade STILL-UNTOUCHED library themes to the refreshed v2 designs.
+   * Non-destructive by construction: a library theme is only replaced when
+   * its stored configJson exactly equals the ORIGINAL shipped v1 preset
+   * (see theme-presets-v1). Any merchant edit, rename or duplicate means the
+   * JSON differs and the theme is left alone. Replacing a matched theme is
+   * witnessed by an appended "Design updated" version — history is never
+   * rewritten and nothing merchant-authored is ever overwritten.
+   */
+  private async refreshThemeLibrary(tenantId: string) {
+    for (const preset of THEME_LIBRARY_PRESETS) {
+      const v1Json = THEME_LIBRARY_V1_JSON[preset.name];
+      if (!v1Json) continue;
+      const existing = await this.prisma.theme.findFirst({
+        where: { tenantId, name: preset.name, source: 'SYSTEM_LIBRARY' },
+        select: { id: true, configJson: true },
+      });
+      if (!existing) continue;
+      if (existing.configJson === JSON.stringify(preset.config)) continue; // already refreshed
+      if (existing.configJson !== v1Json) continue; // merchant-touched — never modify
+      try {
+        await this.prisma.$transaction(async (tx) => {
+          const v2Json = JSON.stringify(preset.config);
+          await tx.theme.update({ where: { id: existing.id }, data: { configJson: v2Json } });
+          const latest = await tx.themeVersion.findFirst({
+            where: { themeId: existing.id },
+            orderBy: { versionNumber: 'desc' },
+            select: { versionNumber: true },
+          });
+          await tx.themeVersion.create({
+            data: {
+              themeId: existing.id,
+              tenantId,
+              versionNumber: (latest?.versionNumber ?? 0) + 1,
+              configJson: v2Json,
+              label: 'Design updated',
+            },
+          });
+        });
+        this.logger.log(`Theme library refreshed: tenant=${tenantId} theme="${preset.name}"`);
+      } catch (e: any) {
+        // Refresh is opportunistic — never block the themes list on it.
+        this.logger.warn(`Theme library refresh skipped for "${preset.name}": ${e?.message ?? e}`);
+      }
+    }
   }
 
   /** Small design snippet for admin theme cards (Shopify-style thumbnails). */
   private previewOf(configJson: string) {
-    const fallback = { primary: '#059669', accent: '#0d9488', heroTitle: '' };
+    const fallback = { primary: '#059669', accent: '#0d9488', heroTitle: '', schemes: [] };
+    const mini = (c: any) => {
+      const colors = c && typeof c === 'object' ? (c as any).colors ?? {} : {};
+      return {
+        bg: typeof colors.background === 'string' ? colors.background : '',
+        text: typeof colors.text === 'string' ? colors.text : '',
+        heading: typeof colors.heading === 'string' ? colors.heading : '',
+        button: typeof colors.button === 'string' ? colors.button : '',
+        buttonText: typeof colors.buttonText === 'string' ? colors.buttonText : '',
+      };
+    };
     try {
       const c = JSON.parse(configJson) as any;
+      const raw = Array.isArray(c?.colorSchemes?.schemes) ? c.colorSchemes.schemes.slice(0, 5) : [];
+      const schemes = Array.from({ length: 5 }, (_, i) => mini(raw[i]));
+      const s0 = schemes[0];
+      const s2 = schemes[2];
       return {
-        primary: typeof c?.theme?.primary === 'string' ? c.theme.primary : fallback.primary,
-        accent: typeof c?.theme?.accent === 'string' ? c.theme.accent : fallback.accent,
+        primary: typeof c?.theme?.primary === 'string' ? c.theme.primary : s0.button || '#059669',
+        accent: typeof c?.theme?.accent === 'string' ? c.theme.accent : s2.button || '#0d9488',
         heroTitle: typeof c?.hero?.title === 'string' ? c.hero.title.slice(0, 120) : '',
+        schemes,
       };
     } catch {
       return fallback;

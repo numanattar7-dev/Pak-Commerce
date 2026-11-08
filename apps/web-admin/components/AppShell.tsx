@@ -79,7 +79,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     id: 'online-store',
     title: 'Online store',
-    items: [{ href: '/themes', label: 'Themes', icon: Palette }],
+    items: [{ href: '/themes', label: 'Online Store', icon: Palette }],
   },
   {
     id: 'settings',

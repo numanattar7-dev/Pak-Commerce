@@ -12,7 +12,6 @@ import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   ArrowLeft,
-  Check,
   Image as ImageIcon,
   Megaphone,
   Sparkles,
@@ -30,6 +29,7 @@ import {
   ShoppingBag,
   Search,
   Palette,
+  SlidersHorizontal,
   Upload,
   Trash2,
   Plus,
@@ -49,14 +49,22 @@ import {
   DEFAULT_CUSTOMIZATION,
   mergeStoreConfig,
   PREVIEW_MESSAGE_TYPE,
-  SECTION_REGISTRY,
   ADDABLE_SECTIONS,
   defaultSection,
   defaultBlock,
   isPreviewPickMessage,
+  SCHEME_COLOR_FIELDS,
+  DEFAULT_COLOR_SCHEMES,
+  getSchemes,
+  resolveDesign,
+  FONT_CHOICES,
+  sectionDefOf,
+  UNKNOWN_SECTION_DEF,
   type PkSection,
   type PkSectionType,
   type PkBlock,
+  type ColorScheme,
+  type ColorSchemeColors,
 } from '@pak-commerce/storefront-renderer';
 import { api, apiUpload, getApiBase } from '@/lib/api';
 
@@ -68,7 +76,6 @@ type ThemeMeta = {
   status: 'PUBLISHED' | 'UNPUBLISHED';
 };
 
-const COLOR_PRESETS = ['#059669', '#2563eb', '#7c3aed', '#dc2626', '#ea580c', '#0f172a', '#be185d', '#0d9488'];
 const STOREFRONT_URL = process.env.NEXT_PUBLIC_STOREFRONT_URL || 'http://localhost:3001';
 // Exact origin of the preview iframe — used for all postMessage traffic.
 // Falls back to null when NEXT_PUBLIC_STOREFRONT_URL is not a valid URL.
@@ -83,8 +90,9 @@ const MAX_HISTORY = 80;
 
 type SectionKey =
   | 'home'
-  | 'branding'
   | 'theme'
+  | 'design'
+  | 'branding'
   | 'announcement'
   | 'hero'
   | 'header'
@@ -95,8 +103,9 @@ type SectionKey =
 
 const SECTIONS: Array<{ key: SectionKey; title: string; icon: React.ComponentType<{ className?: string }> }> = [
   { key: 'home', title: 'Home sections', icon: LayoutGrid },
+  { key: 'theme', title: 'Colors', icon: Palette },
+  { key: 'design', title: 'Theme settings', icon: SlidersHorizontal },
   { key: 'branding', title: 'Branding', icon: ImageIcon },
-  { key: 'theme', title: 'Theme colors', icon: Palette },
   { key: 'announcement', title: 'Announcement bar', icon: Megaphone },
   { key: 'hero', title: 'Hero', icon: Sparkles },
   { key: 'header', title: 'Header menu', icon: MenuIcon },
@@ -108,6 +117,50 @@ const SECTIONS: Array<{ key: SectionKey; title: string; icon: React.ComponentTyp
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 type Device = 'desktop' | 'tablet' | 'mobile';
+
+/* ---- color-scheme editor helpers (module scope) --------------------------- */
+
+/** Normalize any stored color to strict #rrggbb so <input type="color"> can display it. */
+const toHex6 = (value: string): string => {
+  if (/^#[0-9a-fA-F]{6}$/.test(value)) return value.toLowerCase();
+  const short = /^#[0-9a-fA-F]{3}$/.exec(value);
+  if (short) {
+    const [r, g, b] = short[1].split('');
+    return `#${r}${r}${g}${g}${b}${b}`.toLowerCase();
+  }
+  const long = /^#[0-9a-fA-F]{8}$/.exec(value);
+  if (long) return `#${long[1].slice(0, 6)}`.toLowerCase();
+  return '#000000';
+};
+
+/** One editable scheme color row — color chip + typing-tolerant hex input. */
+function HexColorRow({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  const [text, setText] = useState(value);
+  useEffect(() => setText(value), [value]);
+  const commitText = (t: string) => {
+    setText(t);
+    if (/^#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})$/.test(t)) onChange(t.toLowerCase());
+  };
+  return (
+    <div className="flex items-center gap-2">
+      <input
+        type="color"
+        value={toHex6(value)}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-7 h-7 rounded border border-slate-200 cursor-pointer p-0.5 shrink-0 bg-white"
+        aria-label={label}
+      />
+      <span className="text-[12px] text-slate-700 flex-1 min-w-0 truncate">{label}</span>
+      <input
+        value={text}
+        onChange={(e) => commitText(e.target.value)}
+        spellCheck={false}
+        aria-label={`${label} hex`}
+        className="w-24 rounded-lg border border-slate-300 px-2 py-[5px] text-[11px] font-mono outline-none focus:border-slate-900"
+      />
+    </div>
+  );
+}
 
 function ThemeEditorInner() {
   const router = useRouter();
@@ -140,6 +193,7 @@ function ThemeEditorInner() {
   const [dragHomeIndex, setDragHomeIndex] = useState<number | null>(null);
   const [dropHomeIndex, setDropHomeIndex] = useState<number | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  const [openScheme, setOpenScheme] = useState<string | null>(null);
   const [uploadTarget, setUploadTarget] = useState<{ id: string; key: string } | null>(null);
 
   const dirty = JSON.stringify(cfg) !== JSON.stringify(savedCfg);
@@ -236,6 +290,40 @@ function ThemeEditorInner() {
   // legacy cfg.sections keys (featured products / features strip) — kept intact
   const setLegacySection = (key: 'showFeatures' | 'featuredCount' | 'aboutBlurb', value: unknown) =>
     commit({ ...cfg, sections: { ...cfg.sections, [key]: value } } as StoreCustomization);
+
+  // theme-level design tokens (fonts, radius, layouts, spacing) — Shopify
+  // "Theme settings" panel; additive over the stored config.
+  const setStyle = (key: string, value: unknown) =>
+    commit({
+      ...cfg,
+      style: { ...(cfg.style as Record<string, unknown> | null ?? {}), [key]: value },
+    } as StoreCustomization);
+
+  // ── Shopify-style color schemes ────────────────────────────────────────────
+  // Five independent schemes; every chrome part and every home section can
+  // pick its own via settings.schemeId (announced in the Colors panel).
+  const schemes = getSchemes(cfg);
+
+  const setSchemes = (next: ColorScheme[]) =>
+    commit({ ...cfg, colorSchemes: { schemes: next } } as StoreCustomization);
+
+  const patchSchemeColors = (index: number, patch: Partial<ColorSchemeColors>) =>
+    setSchemes(
+      getSchemes(cfg).map((s, i) => (i === index ? { ...s, colors: { ...s.colors, ...patch } } : s)),
+    );
+
+  const renameScheme = (index: number, name: string) =>
+    setSchemes(getSchemes(cfg).map((s, i) => (i === index ? { ...s, name } : s)));
+
+  const resetScheme = (index: number) => {
+    if (index < 0 || index >= DEFAULT_COLOR_SCHEMES.length) return;
+    if (!confirm('Reset this scheme to its built-in colors?')) return;
+    setSchemes(
+      getSchemes(cfg).map((s, i) =>
+        i === index ? { ...s, colors: { ...DEFAULT_COLOR_SCHEMES[i].colors } } : s,
+      ),
+    );
+  };
 
   const undo = useCallback(() => {
     if (past.current.length === 0) return;
@@ -393,7 +481,7 @@ function ThemeEditorInner() {
     patchSectionAt(id, (s) => ({ ...s, enabled: !s.enabled }));
 
   // singular section types can exist at most once — never duplicate them
-  const canDuplicateSection = (s: PkSection) => !SECTION_REGISTRY[s.type].singular;
+  const canDuplicateSection = (s: PkSection) => !sectionDefOf(s.type).singular;
 
   const duplicateSection = (id: string) =>
     mutateHome((list) => {
@@ -434,6 +522,7 @@ function ThemeEditorInner() {
   const resetSection = (id: string) => {
     const s = homeSections.find((x) => x.id === id);
     if (!s) return;
+    if (sectionDefOf(s.type) === UNKNOWN_SECTION_DEF) return; // unsupported types cannot be regenerated
     if (!confirm('Restore this section to its default settings?')) return;
     const fresh = defaultSection(s.type);
     patchSectionAt(id, (old) => ({ ...fresh, id: old.id, enabled: old.enabled }));
@@ -561,6 +650,40 @@ function ThemeEditorInner() {
     </label>
   );
 
+  // color-scheme picker — reused by the chrome panels and every home section
+  const SchemeSelect = (p: { title: string; value?: string; onChange: (id: string | undefined) => void }) => (
+    <Field title={p.title}>
+      <select
+        value={schemes.some((s) => s.id === p.value) ? (p.value as string) : ''}
+        onChange={(e) => p.onChange(e.target.value || undefined)}
+        className="w-full rounded-lg border border-slate-300 px-3 py-[7px] text-[13px] outline-none focus:border-slate-900"
+      >
+        <option value="">Theme default</option>
+        {schemes.map((s) => (
+          <option key={s.id} value={s.id}>
+            {s.name || s.id}
+          </option>
+        ))}
+      </select>
+    </Field>
+  );
+
+  const selectField = (title: string, value: string, options: Array<{ value: string; label: string }>, onChange: (v: string) => void) => (
+    <Field title={title}>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full rounded-lg border border-slate-300 px-3 py-[7px] text-[13px] outline-none focus:border-slate-900"
+      >
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+    </Field>
+  );
+
   // ── generic field renderers for registry-driven sections/blocks ──────────
   const renderHomeField = (s: PkSection, f: import('@pak-commerce/storefront-renderer').FieldDef) => {
     const value = (s.settings as Record<string, unknown>)[f.key];
@@ -583,6 +706,15 @@ function ThemeEditorInner() {
         );
       case 'toggle':
         return <Toggle key={f.key} title={f.label} checked={value !== false} onChange={setv} />;
+      case 'scheme':
+        return (
+          <SchemeSelect
+            key={f.key}
+            title={f.label}
+            value={String(value ?? '')}
+            onChange={(v) => setv(v)}
+          />
+        );
       case 'select':
         return (
           <Field key={f.key} title={f.label}>
@@ -862,31 +994,138 @@ function ThemeEditorInner() {
                             </>
                           )}
 
-                          {/* ---- THEME COLORS ---- */}
+                          {/* ---- COLORS (five Shopify-style schemes) ---- */}
                           {key === 'theme' && (
+                            <div className="space-y-2">
+                              <p className="text-[10px] text-slate-400 leading-snug">
+                                Five independent color schemes. Each storefront part can pick its own —
+                                set it on the announcement bar, header, hero, footer and on every
+                                home section. All nine colors of a scheme are editable.
+                              </p>
+                              {schemes.map((s, i) => {
+                                const expanded = openScheme === s.id;
+                                return (
+                                  <div key={s.id} className="border border-slate-200 rounded-xl overflow-hidden">
+                                    <button
+                                      type="button"
+                                      onClick={() => setOpenScheme(expanded ? null : s.id)}
+                                      aria-expanded={expanded}
+                                      className="w-full flex items-center gap-2 px-2.5 py-2 hover:bg-slate-50 text-left transition"
+                                    >
+                                      <span aria-hidden className="flex rounded-md overflow-hidden border border-slate-200 shrink-0">
+                                        {(['background', 'text', 'button', 'secondaryButton', 'accent'] as const).map((k) => (
+                                          <span key={k} className="w-4 h-6" style={{ backgroundColor: s.colors[k] }} />
+                                        ))}
+                                      </span>
+                                      <span className="text-[12px] font-semibold text-slate-800 flex-1 min-w-0 truncate">
+                                        {s.name || s.id}
+                                      </span>
+                                      <ChevronRight
+                                        className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-150 ${expanded ? 'rotate-90' : ''}`}
+                                      />
+                                    </button>
+                                    {expanded && (
+                                      <div className="px-2.5 pb-3 pt-2 space-y-2 border-t border-slate-100">
+                                        <input
+                                          value={s.name}
+                                          onChange={(e) => renameScheme(i, e.target.value)}
+                                          placeholder="Scheme name"
+                                          className="w-full rounded-lg border border-slate-300 px-2.5 py-[7px] text-[12px] font-semibold outline-none focus:border-slate-900"
+                                        />
+                                        {SCHEME_COLOR_FIELDS.map(({ key: ck, label }) => (
+                                          <HexColorRow
+                                            key={ck}
+                                            label={label}
+                                            value={s.colors[ck]}
+                                            onChange={(v) => patchSchemeColors(i, { [ck]: v } as Partial<ColorSchemeColors>)}
+                                          />
+                                        ))}
+                                        <button
+                                          onClick={() => resetScheme(i)}
+                                          className="text-[11px] font-semibold text-slate-600 hover:text-slate-900 flex items-center gap-1"
+                                        >
+                                          <RotateCcw className="w-3 h-3" /> Reset scheme
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+
+                          {/* ---- THEME SETTINGS (design tokens) ---- */}
+                          {key === 'design' && cfg.style && (
                             <>
-                              <Field title="Primary color">
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  <input type="color" value={cfg.theme.primary || '#059669'} onChange={(e) => set('theme', 'primary', e.target.value)} className="w-9 h-9 rounded-lg border border-slate-200 cursor-pointer" />
-                                  {COLOR_PRESETS.map((c) => (
-                                    <button key={c} onClick={() => set('theme', 'primary', c)} aria-label={`Primary ${c}`} className={`w-7 h-7 rounded-lg border-2 ${cfg.theme.primary === c ? 'border-slate-900' : 'border-white ring-1 ring-slate-200'} shadow-sm`} style={{ backgroundColor: c }} />
-                                  ))}
+                              <p className="text-[10px] text-slate-400 leading-snug">
+                                Structural theme settings — fonts, shapes and layouts. Combined with
+                                the color schemes and section order, this is what makes each theme
+                                look unique.
+                              </p>
+                              {selectField('Heading font', String(cfg.style.headingFont ?? 'system'), FONT_CHOICES, (v) => setStyle('headingFont', v))}
+                              {selectField('Body font', String(cfg.style.bodyFont ?? 'system'), FONT_CHOICES, (v) => setStyle('bodyFont', v))}
+                              <Field title="Corner radius">
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    max={40}
+                                    value={String(cfg.style.radius ?? 12)}
+                                    onChange={(e) => setStyle('radius', Math.max(0, Math.min(40, Number(e.target.value) || 0)))}
+                                    className="w-24 rounded-lg border border-slate-300 px-3 py-[7px] text-[13px] outline-none focus:border-slate-900"
+                                  />
+                                  <span className="text-[11px] text-slate-400">px</span>
                                 </div>
                               </Field>
-                              <Field title="Accent color">
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  <input type="color" value={cfg.theme.accent || '#0d9488'} onChange={(e) => set('theme', 'accent', e.target.value)} className="w-9 h-9 rounded-lg border border-slate-200 cursor-pointer" />
-                                  {COLOR_PRESETS.slice().reverse().map((c) => (
-                                    <button key={c} onClick={() => set('theme', 'accent', c)} aria-label={`Accent ${c}`} className={`w-7 h-7 rounded-lg border-2 ${cfg.theme.accent === c ? 'border-slate-900' : 'border-white ring-1 ring-slate-200'} shadow-sm`} style={{ backgroundColor: c }} />
-                                  ))}
-                                </div>
-                              </Field>
+                              {selectField('Button shape', String(cfg.style.buttonShape ?? 'rounded'), [
+                                { value: 'pill', label: 'Pill' },
+                                { value: 'rounded', label: 'Rounded' },
+                                { value: 'square', label: 'Square' },
+                              ], (v) => setStyle('buttonShape', v))}
+                              {selectField('Card style', String(cfg.style.cardStyle ?? 'shadow'), [
+                                { value: 'shadow', label: 'Shadow' },
+                                { value: 'border', label: 'Outline' },
+                                { value: 'flat', label: 'Flat' },
+                              ], (v) => setStyle('cardStyle', v))}
+                              {selectField('Hero layout', String(cfg.style.heroVariant ?? 'split'), [
+                                { value: 'split', label: 'Split (image beside text)' },
+                                { value: 'overlay', label: 'Overlay (text on image)' },
+                                { value: 'minimal', label: 'Minimal (centered text)' },
+                                { value: 'banner', label: 'Banner (wide image above)' },
+                                { value: 'editorial', label: 'Editorial (magazine)' },
+                              ], (v) => setStyle('heroVariant', v))}
+                              {selectField('Feature highlights layout', String(cfg.style.featuresVariant ?? 'row'), [
+                                { value: 'row', label: 'Row strip' },
+                                { value: 'cards', label: 'Cards' },
+                                { value: 'pill', label: 'Pills' },
+                              ], (v) => setStyle('featuresVariant', v))}
+                              {selectField('Header layout', String(cfg.style.headerLayout ?? 'classic'), [
+                                { value: 'classic', label: 'Classic (logo + menu in line)' },
+                                { value: 'centered', label: 'Centered (menu below logo)' },
+                              ], (v) => setStyle('headerLayout', v))}
+                              {selectField('Footer layout', String(cfg.style.footerLayout ?? 'classic'), [
+                                { value: 'classic', label: 'Classic (four columns)' },
+                                { value: 'compact', label: 'Compact (centered, one column)' },
+                              ], (v) => setStyle('footerLayout', v))}
+                              {selectField('Section spacing', String(cfg.style.spacing ?? 'normal'), [
+                                { value: 'compact', label: 'Compact' },
+                                { value: 'normal', label: 'Normal' },
+                                { value: 'roomy', label: 'Roomy' },
+                              ], (v) => setStyle('spacing', v))}
+                              <Toggle
+                                title="Uppercase headings"
+                                checked={cfg.style.uppercaseHeadings === true}
+                                onChange={(v) => setStyle('uppercaseHeadings', v)}
+                              />
                             </>
                           )}
 
                           {/* ---- ANNOUNCEMENT ---- */}
                           {key === 'announcement' && (
-                            <TextField title="Text" value={cfg.announcement.text || ''} onChange={(v) => set('announcement', 'text', v)} />
+                            <>
+                              <TextField title="Text" value={cfg.announcement.text || ''} onChange={(v) => set('announcement', 'text', v)} />
+                              <SchemeSelect title="Color scheme" value={cfg.announcement.schemeId} onChange={(v) => set('announcement', 'schemeId', v)} />
+                            </>
                           )}
 
                           {/* ---- HERO ---- */}
@@ -914,6 +1153,7 @@ function ThemeEditorInner() {
                                 <TextField title="Button text" value={cfg.hero.ctaText || ''} onChange={(v) => set('hero', 'ctaText', v)} />
                                 <TextField title="Button link" value={cfg.hero.ctaLink || ''} onChange={(v) => set('hero', 'ctaLink', v)} placeholder="/products" />
                               </div>
+                              <SchemeSelect title="Color scheme" value={cfg.hero.schemeId} onChange={(v) => set('hero', 'schemeId', v)} />
                             </>
                           )}
 
@@ -932,7 +1172,7 @@ function ThemeEditorInner() {
                                   {addOpen && (
                                     <div className="absolute right-0 z-20 mt-1 w-64 bg-white border border-slate-200 rounded-xl shadow-xl p-1.5 max-h-80 overflow-y-auto">
                                       {ADDABLE_SECTIONS.map((t) => {
-                                        const def = SECTION_REGISTRY[t];
+                                        const def = sectionDefOf(t);
                                         const used = def.singular && homeSections.some((s) => s.type === t);
                                         return (
                                           <button
@@ -961,7 +1201,7 @@ function ThemeEditorInner() {
                               )}
 
                               {homeSections.map((s, i) => {
-                                const def = SECTION_REGISTRY[s.type];
+                                const def = sectionDefOf(s.type);
                                 const open = activeHomeId === s.id;
                                 return (
                                   <div
@@ -1000,20 +1240,38 @@ function ThemeEditorInner() {
                                         {s.enabled ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
                                       </button>
                                       <button
+                                        onClick={() => moveSection(i, i - 1)}
+                                        disabled={i === 0}
+                                        title="Move up"
+                                        className="p-1 rounded hover:bg-slate-100 text-slate-500 disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed"
+                                      >
+                                        <ChevronUp className="w-4 h-4" />
+                                      </button>
+                                      <button
+                                        onClick={() => moveSection(i, i + 1)}
+                                        disabled={i === homeSections.length - 1}
+                                        title="Move down"
+                                        className="p-1 rounded hover:bg-slate-100 text-slate-500 disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed"
+                                      >
+                                        <ChevronDown className="w-4 h-4" />
+                                      </button>
+                                      <button
                                         onClick={() => duplicateSection(s.id)}
                                         disabled={!canDuplicateSection(s)}
                                         title={
                                           canDuplicateSection(s)
                                             ? 'Duplicate section'
-                                            : `${SECTION_REGISTRY[s.type].label} is a single-instance section and cannot be duplicated`
+                                            : `${def.label} is a single-instance section and cannot be duplicated`
                                         }
                                         className="p-1 rounded hover:bg-slate-100 text-slate-500 disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed"
                                       >
                                         <Copy className="w-4 h-4" />
                                       </button>
-                                      <button onClick={() => resetSection(s.id)} title="Restore default settings" className="p-1 rounded hover:bg-slate-100 text-slate-500">
-                                        <RotateCcw className="w-4 h-4" />
-                                      </button>
+                                      {def !== UNKNOWN_SECTION_DEF && (
+                                        <button onClick={() => resetSection(s.id)} title="Restore default settings" className="p-1 rounded hover:bg-slate-100 text-slate-500">
+                                          <RotateCcw className="w-4 h-4" />
+                                        </button>
+                                      )}
                                       <button onClick={() => removeSection(s.id)} title="Remove section" className="p-1 rounded hover:bg-red-50 text-slate-400 hover:text-red-600">
                                         <Trash2 className="w-4 h-4" />
                                       </button>
@@ -1021,6 +1279,13 @@ function ThemeEditorInner() {
 
                                     {open && (
                                       <div className="px-3 pb-3 pt-2 border-t border-slate-100 space-y-3">
+                                        {def !== UNKNOWN_SECTION_DEF && (
+                                          <SchemeSelect
+                                            title="Color scheme"
+                                            value={String((s.settings as Record<string, unknown>).schemeId ?? '')}
+                                            onChange={(v) => setSectionSetting(s.id, 'schemeId', v)}
+                                          />
+                                        )}
                                         {def.settings.length === 0 && (
                                           <p className="text-[10px] text-slate-400 leading-snug">
                                             Content for this section is edited in its own panel (see “Hero” / the featured-product fields below).
@@ -1098,7 +1363,10 @@ function ThemeEditorInner() {
 
                           {/* ---- HEADER MENU ---- */}
                           {key === 'header' && (
-                            <div className="space-y-2">
+                            <>
+                              <SchemeSelect title="Color scheme" value={cfg.header.schemeId} onChange={(v) => set('header', 'schemeId', v)} />
+                              <Toggle title="Sticky header" checked={cfg.header.sticky !== false} onChange={(v) => set('header', 'sticky', v)} />
+                              <div className="space-y-2">
                               {linksOf(cfg.header.menuLinks).map((l, i) => (
                                 <div key={i} className="flex gap-1.5">
                                   <input
@@ -1136,12 +1404,14 @@ function ThemeEditorInner() {
                               >
                                 <Plus className="w-3.5 h-3.5" /> Add link
                               </button>
-                            </div>
+                              </div>
+                            </>
                           )}
 
                           {/* ---- FOOTER ---- */}
                           {key === 'footer' && (
                             <>
+                              <SchemeSelect title="Color scheme" value={cfg.footer.schemeId} onChange={(v) => set('footer', 'schemeId', v)} />
                               <TextField title="About text" value={cfg.footer.aboutText || ''} onChange={(v) => set('footer', 'aboutText', v)} area />
                               <div className="grid grid-cols-2 gap-2">
                                 <TextField title="WhatsApp" value={cfg.footer.social?.whatsapp || ''} onChange={(v) => set('footer', 'social', { ...cfg.footer.social, whatsapp: v })} placeholder="0321…" />

@@ -11,11 +11,18 @@ export type PkSectionType =
   | 'hero'
   | 'features'
   | 'featuredProducts'
+  | 'productGrid'
+  | 'productCards'
   | 'richText'
   | 'imageWithText'
   | 'faq';
 
-export type FieldType = 'text' | 'textarea' | 'number' | 'toggle' | 'select' | 'image';
+export type FieldType = 'text' | 'textarea' | 'number' | 'toggle' | 'select' | 'image' | 'scheme';
+/**
+ * `scheme` fields are rendered by the editor as Shopify-style color-scheme
+ * selectors across ALL sections (injected universally), so registry entries
+ * below intentionally omit them — the editor adds one automatically.
+ */
 
 export interface FieldDef {
   key: string;
@@ -81,6 +88,61 @@ export const SECTION_REGISTRY: Record<PkSectionType, SectionDef> = {
     description: 'Grid of products pulled live from your catalog.',
     singular: true,
     settings: [], // count / blurb edited via legacy cfg.sections keys
+  },
+  productGrid: {
+    type: 'productGrid',
+    label: 'Product grid',
+    description: 'Heading + a flexible grid of catalog products with a view-all link.',
+    singular: false,
+    defaultSettings: {
+      heading: 'Shop the collection',
+      subheading: '',
+      limit: 8,
+      columns: '4',
+      viewAll: true,
+      schemeId: 'scheme-4',
+    },
+    settings: [
+      { key: 'heading', label: 'Heading', type: 'text', placeholder: 'Shop the collection' },
+      { key: 'subheading', label: 'Sub-heading', type: 'textarea', rows: 2 },
+      { key: 'limit', label: 'Products to show', type: 'number' },
+      {
+        key: 'columns',
+        label: 'Columns',
+        type: 'select',
+        options: [
+          { value: '2', label: '2 columns' },
+          { value: '3', label: '3 columns' },
+          { value: '4', label: '4 columns' },
+        ],
+      },
+      { key: 'viewAll', label: 'Show “View all” button', type: 'toggle' },
+    ],
+  },
+  productCards: {
+    type: 'productCards',
+    label: 'Product cards',
+    description: 'A heading-free row of product cards on a horizontal scroll — great for promos.',
+    singular: false,
+    defaultSettings: {
+      limit: 4,
+      scroll: 'horizontal',
+      viewAll: false,
+      schemeId: 'scheme-3',
+    },
+    settings: [
+      { key: 'limit', label: 'Products to show', type: 'number' },
+      {
+        key: 'scroll',
+        label: 'Layout',
+        type: 'select',
+        options: [
+          { value: 'horizontal', label: 'Horizontal scroll' },
+          { value: 'grid', label: 'Compact grid' },
+        ],
+      },
+      { key: 'viewAll', label: 'Show “View all” link', type: 'toggle' },
+    ],
   },
   richText: {
     type: 'richText',
@@ -155,7 +217,30 @@ export const SECTION_REGISTRY: Record<PkSectionType, SectionDef> = {
   },
 };
 
-export const ADDABLE_SECTIONS: PkSectionType[] = ['hero', 'features', 'featuredProducts', 'richText', 'imageWithText', 'faq'];
+export const ADDABLE_SECTIONS: PkSectionType[] = [
+  'hero',
+  'features',
+  'featuredProducts',
+  'productGrid',
+  'productCards',
+  'richText',
+  'imageWithText',
+  'faq',
+];
+
+/** Definition used for stored section types unknown to this build (junk-safe). */
+export const UNKNOWN_SECTION_DEF: SectionDef = {
+  type: 'custom' as PkSectionType,
+  label: 'Unsupported section',
+  description: 'This section type is not provided by the current theme system — it can still be reordered, hidden or removed.',
+  singular: false,
+  settings: [],
+};
+
+/** Registry access that never throws on unknown/legacy section types. */
+export function sectionDefOf(type: string): SectionDef {
+  return SECTION_REGISTRY[type as PkSectionType] ?? UNKNOWN_SECTION_DEF;
+}
 
 export function newId(prefix: string) {
   const rand =
@@ -166,14 +251,14 @@ export function newId(prefix: string) {
 }
 
 export function defaultBlock(type: PkSectionType): PkBlock {
-  const def = SECTION_REGISTRY[type];
+  const def = sectionDefOf(type);
   const settings: Record<string, unknown> = {};
   for (const f of def.block?.fields ?? []) settings[f.key] = f.type === 'toggle' ? true : '';
   return { id: newId('blk'), enabled: true, settings };
 }
 
 export function defaultSection(type: PkSectionType): PkSection {
-  const def = SECTION_REGISTRY[type];
+  const def = sectionDefOf(type);
   const blocks = (def.defaultBlocks ?? []).map((b) => ({
     id: newId('blk'),
     enabled: true,
@@ -198,6 +283,8 @@ const KNOWN_SECTION_TYPES = new Set<string>([
   'hero',
   'features',
   'featuredProducts',
+  'productGrid',
+  'productCards',
   'richText',
   'imageWithText',
   'faq',

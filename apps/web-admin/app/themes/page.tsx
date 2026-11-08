@@ -44,7 +44,15 @@ const PREVIEW_ORIGIN = (() => {
   }
 })();
 
-type ThemePreview = { primary?: string; accent?: string; heroTitle?: string };
+type SchemeMini = { bg?: string; text?: string; heading?: string; button?: string; buttonText?: string };
+
+type ThemePreview = {
+  primary?: string;
+  accent?: string;
+  heroTitle?: string;
+  /** compact paint map for the five color schemes (see themes.service previewOf) */
+  schemes?: SchemeMini[];
+};
 
 type ThemeRow = {
   id: string;
@@ -71,12 +79,21 @@ const btnSecondary =
 const menuItem =
   'w-full flex items-center gap-2 px-2.5 py-2 text-[12px] text-slate-700 hover:bg-slate-50 rounded-lg text-left transition';
 
-/** Mini store preview built from the theme's real primary/accent/hero copy. */
+/** Mini store preview built from the theme's real color schemes / hero copy. */
 function ThemeThumbnail({ t, large }: { t: ThemeRow; large?: boolean }) {
   const p = t.preview ?? {};
   const primary = p.primary || '#059669';
   const accent = p.accent || '#0d9488';
   const title = p.heroTitle || t.name;
+  const schemes = Array.isArray(p.schemes) ? p.schemes : [];
+  const annBg = schemes[0]?.bg ?? primary;
+  const annText = schemes[0]?.text ?? '#ffffff';
+  const heroBg = schemes[2]?.bg ?? '#f9fafb';
+  const heroText = schemes[2]?.heading ?? schemes[2]?.text ?? '#111827';
+  const btnBg = schemes[2]?.button ?? accent;
+  const btnText = schemes[2]?.buttonText ?? '#ffffff';
+  const footerBg = schemes[4]?.bg ?? '#111827';
+  const footerText = schemes[4]?.text ?? '#f1f5f9';
   return (
     <div className="rounded-lg overflow-hidden border border-slate-200 bg-white select-none" aria-hidden>
       {/* browser chrome */}
@@ -86,16 +103,16 @@ function ThemeThumbnail({ t, large }: { t: ThemeRow; large?: boolean }) {
         <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />
         <span className="ml-1.5 h-1.5 flex-1 rounded-full bg-slate-200" />
       </div>
-      {/* announcement bar */}
+      {/* announcement bar (scheme 1) */}
       <div
-        className="px-2 py-[3px] text-center text-[7px] font-bold text-white truncate"
-        style={{ backgroundColor: primary }}
+        className="px-2 py-[3px] text-center text-[7px] font-bold truncate"
+        style={{ backgroundColor: annBg, color: annText }}
       >
         Free nationwide delivery · Cash on Delivery
       </div>
       {/* header */}
       <div className="flex items-center justify-between px-2.5 py-1.5 border-b border-slate-100">
-        <span className="text-[8px] font-black tracking-wide" style={{ color: primary }}>
+        <span className="text-[8px] font-black tracking-wide" style={{ color: heroText }}>
           STORE
         </span>
         <span className="flex items-center gap-1.5">
@@ -104,17 +121,21 @@ function ThemeThumbnail({ t, large }: { t: ThemeRow; large?: boolean }) {
           <span className="w-4 h-[3px] rounded-full bg-slate-200" />
         </span>
       </div>
-      {/* hero */}
-      <div className={`text-center bg-slate-50 border-b border-slate-100 ${large ? 'px-6 py-9' : 'px-3 py-4'}`}>
-        <span className="mx-auto block h-1 w-8 rounded-full" style={{ backgroundColor: accent }} />
+      {/* hero (scheme 3's palette) */}
+      <div
+        className={`text-center border-b border-slate-100 ${large ? 'px-6 py-9' : 'px-3 py-4'}`}
+        style={{ backgroundColor: heroBg }}
+      >
+        <span className="mx-auto block h-1 w-8 rounded-full" style={{ backgroundColor: btnBg }} />
         <p
-          className={`mt-2 font-black leading-tight text-slate-800 ${large ? 'text-[15px]' : 'text-[9px] line-clamp-2'}`}
+          className={`mt-2 font-black leading-tight ${large ? 'text-[15px]' : 'text-[9px] line-clamp-2'}`}
+          style={{ color: heroText }}
         >
           {title}
         </p>
         <span
-          className={`mt-2.5 inline-block rounded font-bold text-white ${large ? 'px-3 py-1 text-[9px]' : 'px-2 py-0.5 text-[7px]'}`}
-          style={{ backgroundColor: accent }}
+          className={`mt-2.5 inline-block rounded font-bold ${large ? 'px-3 py-1 text-[9px]' : 'px-2 py-0.5 text-[7px]'}`}
+          style={{ backgroundColor: btnBg, color: btnText }}
         >
           Shop now
         </span>
@@ -125,14 +146,14 @@ function ThemeThumbnail({ t, large }: { t: ThemeRow; large?: boolean }) {
           <div key={i} className="aspect-square rounded-sm bg-slate-100 relative overflow-hidden">
             <span
               className="absolute inset-x-0 bottom-0 h-1"
-              style={{ backgroundColor: i % 2 === 0 ? primary : accent, opacity: 0.7 }}
+              style={{ backgroundColor: i % 2 === 0 ? btnBg : annBg, opacity: 0.7 }}
             />
           </div>
         ))}
       </div>
-      {/* footer */}
-      <div className="h-5 flex items-center justify-center bg-[#111827]">
-        <span className="text-[6px] text-white/60">© {new Date().getFullYear()} your store</span>
+      {/* footer (scheme 5) */}
+      <div className="h-5 flex items-center justify-center" style={{ backgroundColor: footerBg }}>
+        <span className="text-[6px]" style={{ color: footerText }}>© {new Date().getFullYear()} your store</span>
       </div>
     </div>
   );
