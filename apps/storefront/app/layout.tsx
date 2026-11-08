@@ -7,7 +7,7 @@ import { SITE_URL } from '@/lib/seo';
 export async function generateMetadata(): Promise<Metadata> {
   // Store-level SEO (Customize Store → SEO) — falls back silently on any error
   try {
-    const base = process.env.NEXT_PUBLIC_API_BASE || 'http://127.0.0.1:4000';
+    const base = process.env.NEXT_PUBLIC_API_BASE || 'https://pak-commerce-api.onrender.com';
     const res = await fetch(`${base}/store-settings/public/khaadi`, { next: { revalidate: 60 } });
     if (res.ok) {
       const data = await res.json();
@@ -35,7 +35,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="min-h-screen text-slate-900 bg-slate-50 flex flex-col justify-between">
+      <body className="min-h-screen text-slate-900 bg-[var(--pk-page-bg)] flex flex-col justify-between">
         <Providers>
           <Shell>{children}</Shell>
         </Providers>
