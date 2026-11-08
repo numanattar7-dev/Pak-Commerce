@@ -9,9 +9,11 @@ import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { validateThemeZip } from './theme-zip.util';
+import { THEME_LIBRARY_PRESETS } from './theme-presets';
 
 const MAX_NAME = 80;
 const THEME_VERSION_LABEL_MAX = 120;
+const MAX_CONFIG_JSON = 1_000_000; // 1 MB of design JSON is far beyond any real theme
 
 const cleanName = (raw: unknown): string => {
   const name = String(raw ?? '').trim();
@@ -37,25 +39,74 @@ export class ThemesService {
   ) {}
 
   // ─────────────────────────────────────────────────────────────────────
-  // Lazy seed: a store with no themes gets "Current theme" (from the live
-  // StoreSettings config) created as its PUBLISHED theme — once.
+  // Lazy seed:
+  //  • a store with no themes gets "Current theme" (from the live
+  //    StoreSettings config) created as its PUBLISHED theme — once.
+  //  • every store gets the bundled Shopify-style theme library
+  //    (Dawn, Refresh, Craft, Taste, Sense, Ride) installed once — tracked
+  //    by source=SYSTEM_LIBRARY so renames/deletes are respected.
   // ─────────────────────────────────────────────────────────────────────
   private async ensureSeedTheme(tenantId: string) {
     const count = await this.prisma.theme.count({ where: { tenantId } });
-    if (count > 0) return;
-    const settings = await this.prisma.storeSettings.findUnique({ where: { tenantId } });
-    const configJson = settings?.configJson ?? '{}';
-    const theme = await this.prisma.theme.create({
-      data: {
-        id: randomUUID(),
-        tenantId,
-        name: 'Current theme',
-        status: 'PUBLISHED',
-        source: 'SYSTEM',
-        configJson,
-      },
+    if (count === 0) {
+      const settings = await this.prisma.storeSettings.findUnique({ where: { tenantId } });
+      const configJson = settings?.configJson ?? '{}';
+      const theme = await this.prisma.theme.create({
+        data: {
+          id: randomUUID(),
+          tenantId,
+          name: 'Current theme',
+          status: 'PUBLISHED',
+          source: 'SYSTEM',
+          configJson,
+        },
+      });
+      await this.createVersion(tenantId, theme.id, 'Initial theme (auto-created)');
+    }
+    await this.ensureThemeLibrary(tenantId);
+  }
+
+  /** Install the bundled theme library once per tenant (idempotent). */
+  private async ensureThemeLibrary(tenantId: string) {
+    const installed = await this.prisma.theme.findFirst({
+      where: { tenantId, source: 'SYSTEM_LIBRARY' },
+      select: { id: true },
     });
-    await this.createVersion(tenantId, theme.id, 'Initial theme (auto-created)');
+    if (installed) return;
+    for (const preset of THEME_LIBRARY_PRESETS) {
+      const exists = await this.prisma.theme.findFirst({
+        where: { tenantId, name: preset.name },
+        select: { id: true },
+      });
+      if (exists) continue; // merchant already has a theme with this name
+      const theme = await this.prisma.theme.create({
+        data: {
+          id: randomUUID(),
+          tenantId,
+          name: preset.name,
+          status: 'UNPUBLISHED',
+          source: 'SYSTEM_LIBRARY',
+          configJson: JSON.stringify(preset.config),
+        },
+      });
+      await this.createVersion(tenantId, theme.id, `Installed from theme library`);
+    }
+    this.logger.log(`Theme library installed: tenant=${tenantId} themes=${THEME_LIBRARY_PRESETS.length}`);
+  }
+
+  /** Small design snippet for admin theme cards (Shopify-style thumbnails). */
+  private previewOf(configJson: string) {
+    const fallback = { primary: '#059669', accent: '#0d9488', heroTitle: '' };
+    try {
+      const c = JSON.parse(configJson) as any;
+      return {
+        primary: typeof c?.theme?.primary === 'string' ? c.theme.primary : fallback.primary,
+        accent: typeof c?.theme?.accent === 'string' ? c.theme.accent : fallback.accent,
+        heroTitle: typeof c?.hero?.title === 'string' ? c.hero.title.slice(0, 120) : '',
+      };
+    } catch {
+      return fallback;
+    }
   }
 
   private async latestVersionNumber(themeId: string) {
@@ -109,6 +160,7 @@ export class ThemesService {
         versionCount: t._count.versions,
         latestVersion: t.versions[0]?.versionNumber ?? 0,
         assetCount: t._count.assets,
+        preview: this.previewOf(t.configJson),
         createdAt: t.createdAt,
         updatedAt: t.updatedAt,
       })),
@@ -267,6 +319,44 @@ export class ThemesService {
     if (!theme) throw new NotFoundException('Theme not found');
     const v = await this.createVersion(tenantId, id, typeof label === 'string' ? label : undefined);
     return { versionNumber: v.versionNumber };
+  }
+
+  /**
+   * Save theme-editor changes into a theme (Shopify theme editor → Save).
+   * A draft theme saves as a draft only; the published (live) theme also
+   * syncs StoreSettings in the same transaction so the storefront updates
+   * immediately — exactly like Shopify's live-theme editor.
+   */
+  async updateConfig(tenantId: string, id: string, rawConfig: unknown) {
+    if (!rawConfig || typeof rawConfig !== 'object' || Array.isArray(rawConfig)) {
+      throw new BadRequestException('config must be a JSON object');
+    }
+    const json = JSON.stringify(rawConfig);
+    if (json.length > MAX_CONFIG_JSON) {
+      throw new BadRequestException('Theme config too large (max 1 MB)');
+    }
+    const theme = await this.prisma.theme.findFirst({ where: { id, tenantId } });
+    if (!theme) throw new NotFoundException('Theme not found');
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.theme.update({ where: { id: theme.id }, data: { configJson: json } });
+        if (theme.status === 'PUBLISHED') {
+          await tx.storeSettings.upsert({
+            where: { tenantId },
+            create: { tenantId, configJson: json },
+            update: { configJson: json },
+          });
+        }
+      });
+    } catch (e: any) {
+      if (this.isUniqueViolation(e)) {
+        throw new ConflictException(
+          'Another theme was published for this store at the same time. Reload and try again.',
+        );
+      }
+      throw e;
+    }
+    return { saved: true, id: theme.id, live: theme.status === 'PUBLISHED' };
   }
 
   /** Restore an earlier version — auditable. Fully atomic: config restore,

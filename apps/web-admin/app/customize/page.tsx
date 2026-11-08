@@ -8,8 +8,8 @@
 // Toolbar → theme name, save status, undo/redo, device switch, preview, save
 // ---------------------------------------------------------------------------
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   ArrowLeft,
   Check,
@@ -30,7 +30,6 @@ import {
   ShoppingBag,
   Search,
   Palette,
-  FileText,
   Upload,
   Trash2,
   Plus,
@@ -63,13 +62,10 @@ import { api, apiUpload, getApiBase } from '@/lib/api';
 
 type LinkRow = { label: string; href: string };
 
-type StorePageRow = {
-  id: string;
-  slug: string;
-  title: string;
-  content: string;
-  isPublished: boolean;
-  updatedAt: string;
+type ThemeMeta = {
+  id: string | null;
+  name: string;
+  status: 'PUBLISHED' | 'UNPUBLISHED';
 };
 
 const COLOR_PRESETS = ['#059669', '#2563eb', '#7c3aed', '#dc2626', '#ea580c', '#0f172a', '#be185d', '#0d9488'];
@@ -113,8 +109,10 @@ const SECTIONS: Array<{ key: SectionKey; title: string; icon: React.ComponentTyp
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 type Device = 'desktop' | 'tablet' | 'mobile';
 
-export default function ThemeEditor() {
+function ThemeEditorInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const themeIdParam = searchParams.get('theme');
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const logoInput = useRef<HTMLInputElement>(null);
   const faviconInput = useRef<HTMLInputElement>(null);
@@ -123,6 +121,7 @@ export default function ThemeEditor() {
   const [cfg, setCfg] = useState<StoreCustomization>(DEFAULT_CUSTOMIZATION);
   const [savedCfg, setSavedCfg] = useState<StoreCustomization>(DEFAULT_CUSTOMIZATION);
   const [loaded, setLoaded] = useState(false);
+  const [theme, setTheme] = useState<ThemeMeta>({ id: null, name: 'Current theme', status: 'PUBLISHED' });
   const [activeSection, setActiveSection] = useState<SectionKey | ''>('hero');
   const [leftOpen, setLeftOpen] = useState(true);
   const [device, setDevice] = useState<Device>('desktop');
@@ -136,10 +135,6 @@ export default function ThemeEditor() {
   const future = useRef<StoreCustomization[]>([]);
   const [, setHistTick] = useState(0);
 
-  // pages manager (modal)
-  const [pages, setPages] = useState<StorePageRow[]>([]);
-  const [pageEditing, setPageEditing] = useState<Partial<StorePageRow> | null>(null);
-
   // home sections — selected row + drag-and-drop reorder
   const [activeHomeId, setActiveHomeId] = useState<string | null>('home-hero');
   const [dragHomeIndex, setDragHomeIndex] = useState<number | null>(null);
@@ -149,23 +144,47 @@ export default function ThemeEditor() {
 
   const dirty = JSON.stringify(cfg) !== JSON.stringify(savedCfg);
 
-  // ── load settings + pages ─────────────────────────────────────────────────
+  // ── load theme config ────────────────────────────────────────────────────
+  // • /customize?theme=<id> — Shopify-style per-theme editor:
+  //     live theme  → the storefront config (store-settings) + theme meta
+  //     draft theme → that theme's saved configJson
+  // • /customize (no id) — legacy fallback: edit the live store settings.
   const load = useCallback(async () => {
     try {
-      const [s, p] = await Promise.all([
-        api<{ config: Record<string, unknown> }>('/store-settings'),
-        api<StorePageRow[]>('/store-pages'),
-      ]);
-      const merged = mergeStoreConfig(DEFAULT_CUSTOMIZATION, s.config);
-      setCfg(merged);
-      setSavedCfg(merged);
-      setPages(Array.isArray(p) ? p : []);
+      if (themeIdParam) {
+        const t = await api<{ id: string; name: string; status: 'PUBLISHED' | 'UNPUBLISHED'; configJson: string }>(
+          `/themes/${encodeURIComponent(themeIdParam)}`,
+        );
+        setTheme({ id: t.id, name: t.name, status: t.status });
+        if (t.status === 'PUBLISHED') {
+          // live theme — always edit what the storefront is actually serving
+          const s = await api<{ config: Record<string, unknown> }>('/store-settings');
+          const merged = mergeStoreConfig(DEFAULT_CUSTOMIZATION, s.config);
+          setCfg(merged);
+          setSavedCfg(merged);
+        } else {
+          let parsed: unknown = {};
+          try {
+            parsed = JSON.parse(t.configJson || '{}');
+          } catch {
+            parsed = {};
+          }
+          const merged = mergeStoreConfig(DEFAULT_CUSTOMIZATION, parsed as Record<string, unknown>);
+          setCfg(merged);
+          setSavedCfg(merged);
+        }
+      } else {
+        const s = await api<{ config: Record<string, unknown> }>('/store-settings');
+        const merged = mergeStoreConfig(DEFAULT_CUSTOMIZATION, s.config);
+        setCfg(merged);
+        setSavedCfg(merged);
+      }
     } catch (e: any) {
       setError(e?.message || 'Failed to load settings');
     } finally {
       setLoaded(true);
     }
-  }, []);
+  }, [themeIdParam]);
 
   useEffect(() => {
     load();
@@ -273,12 +292,19 @@ export default function ThemeEditor() {
   }, [dirty]);
 
   // ── save ──────────────────────────────────────────────────────────────────
+  // Shopify: the theme editor's Save writes into the theme being edited.
+  // A live theme also updates the storefront immediately (the backend syncs
+  // StoreSettings in the same transaction); a draft theme saves as a draft.
   const save = useCallback(async () => {
     setBusy(true);
     setSaveState('saving');
     setError(null);
     try {
-      await api('/store-settings', { method: 'PUT', body: { config: cfg } });
+      if (theme.id) {
+        await api(`/themes/${encodeURIComponent(theme.id)}`, { method: 'PUT', body: { config: cfg } });
+      } else {
+        await api('/store-settings', { method: 'PUT', body: { config: cfg } });
+      }
       setSavedCfg(cfg);
       setSaveState('saved');
       setSavedAt(
@@ -290,7 +316,7 @@ export default function ThemeEditor() {
     } finally {
       setBusy(false);
     }
-  }, [cfg]);
+  }, [cfg, theme.id]);
 
   // Ctrl/Cmd+S saves
   useEffect(() => {
@@ -477,56 +503,10 @@ export default function ThemeEditor() {
     }
   };
 
-  // ── pages CRUD ────────────────────────────────────────────────────────────
-  const savePage = async () => {
-    if (!pageEditing?.title?.trim()) return;
-    setBusy(true);
-    setError(null);
-    try {
-      if (pageEditing.id) {
-        await api(`/store-pages/${pageEditing.id}`, {
-          method: 'PUT',
-          body: {
-            title: pageEditing.title,
-            slug: pageEditing.slug || undefined,
-            content: pageEditing.content || '',
-            isPublished: pageEditing.isPublished ?? false,
-          },
-        });
-      } else {
-        await api('/store-pages', {
-          method: 'POST',
-          body: {
-            title: pageEditing.title,
-            slug: pageEditing.slug || undefined,
-            content: pageEditing.content || '',
-            isPublished: pageEditing.isPublished ?? false,
-          },
-        });
-      }
-      setPageEditing(null);
-      await load();
-    } catch (e: any) {
-      setError(e?.detail || e?.message || 'Save failed');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const delPage = async (p: StorePageRow) => {
-    if (!confirm(`Delete page "${p.title}"?`)) return;
-    try {
-      await api(`/store-pages/${p.id}`, { method: 'DELETE' });
-      await load();
-    } catch (e: any) {
-      setError(e?.message || 'Delete failed');
-    }
-  };
-
-  // exit with unsaved-changes guard
+  // exit with unsaved-changes guard (back to Online Store → Themes)
   const exitEditor = () => {
     if (dirty && !confirm('You have unsaved changes. Exit without saving?')) return;
-    router.push('/');
+    router.push('/themes');
   };
 
   // ── field primitives (compact rows) ───────────────────────────────────────
@@ -718,8 +698,14 @@ export default function ThemeEditor() {
             <PanelLeft className="w-4 h-4" />
           </button>
           <div className="hidden sm:flex items-center gap-2 min-w-0 border-l border-white/10 pl-2 ml-1">
-            <span className="text-[13px] font-semibold truncate">Current theme</span>
-            <span className="text-[10px] font-bold bg-white/10 text-white/60 px-1.5 py-0.5 rounded">Draft</span>
+            <span className="text-[13px] font-semibold truncate">{theme.name}</span>
+            <span
+              className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                theme.status === 'PUBLISHED' ? 'bg-[#95bf47] text-[#1a1a1a]' : 'bg-white/10 text-white/60'
+              }`}
+            >
+              {theme.status === 'PUBLISHED' ? 'Live' : 'Draft'}
+            </span>
           </div>
         </div>
 
@@ -796,12 +782,6 @@ export default function ThemeEditor() {
           <aside className="w-[300px] xl:w-[330px] bg-white border-r border-slate-200 flex flex-col shrink-0">
             <div className="px-4 h-11 border-b border-slate-100 flex items-center justify-between shrink-0">
               <p className="text-[12px] font-bold uppercase tracking-wider text-slate-500">Sections</p>
-              <button
-                onClick={() => setPageEditing({ title: '', content: '', isPublished: false })}
-                className="text-[11px] font-semibold text-slate-600 hover:text-slate-900 flex items-center gap-1"
-              >
-                <FileText className="w-3.5 h-3.5" /> Pages ({pages.length})
-              </button>
             </div>
             <div className="flex-1 overflow-y-auto px-2 py-2">
               {!loaded ? (
@@ -1273,77 +1253,22 @@ export default function ThemeEditor() {
         </section>
       </div>
 
-      {/* ── pages modal ── */}
-      {pageEditing && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-900/40" onClick={() => setPageEditing(null)} />
-          <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 sticky top-0 bg-white">
-              <h3 className="font-semibold text-slate-900">{pageEditing.id ? 'Edit page' : 'New page'}</h3>
-              <button onClick={() => setPageEditing(null)} className="text-slate-400 hover:text-slate-700 text-xl leading-none">×</button>
-            </div>
-            <div className="p-5 space-y-3">
-              <Field title="Title *">
-                <input
-                  value={pageEditing.title || ''}
-                  onChange={(e) => setPageEditing({ ...pageEditing, title: e.target.value })}
-                  placeholder="About Us"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-[7px] text-[13px] outline-none focus:border-slate-900"
-                />
-              </Field>
-              <Field title="Slug (auto if empty)">
-                <input
-                  value={pageEditing.slug || ''}
-                  onChange={(e) => setPageEditing({ ...pageEditing, slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-') })}
-                  placeholder="about-us"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-[7px] text-[13px] outline-none focus:border-slate-900"
-                />
-              </Field>
-              <Field title="Content">
-                <textarea
-                  rows={8}
-                  value={pageEditing.content || ''}
-                  onChange={(e) => setPageEditing({ ...pageEditing, content: e.target.value })}
-                  placeholder="Write your page content here…"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-[7px] text-[13px] outline-none focus:border-slate-900"
-                />
-              </Field>
-              <Toggle title="Published (visible on storefront)" checked={pageEditing.isPublished ?? false} onChange={(v) => setPageEditing({ ...pageEditing, isPublished: v })} />
-              <div className="flex gap-2 pt-1">
-                <button onClick={savePage} disabled={busy || !pageEditing.title?.trim()} className="bg-slate-900 text-white rounded-lg px-4 py-2 text-[13px] font-medium hover:bg-slate-800 transition flex items-center gap-1.5">
-                  <Check className="w-4 h-4" /> Save page
-                </button>
-                {pageEditing.id && (
-                  <button
-                    onClick={() => {
-                      const p = pages.find((x) => x.id === pageEditing.id);
-                      if (p) { delPage(p); setPageEditing(null); }
-                    }}
-                    className="bg-white border border-red-300 text-red-600 rounded-lg px-3.5 py-2 text-[13px] font-medium hover:bg-red-50 transition"
-                  >
-                    Delete
-                  </button>
-                )}
-              </div>
-            </div>
-            <div className="px-5 pb-5">
-              <p className="text-[11px] font-semibold text-slate-400 uppercase mb-2">All pages</p>
-              <div className="space-y-1">
-                {pages.map((p) => (
-                  <div key={p.id} className="flex items-center justify-between px-3 py-2 rounded-lg border border-slate-100 hover:border-slate-200">
-                    <button onClick={() => setPageEditing({ ...p })} className="text-[13px] font-medium text-slate-800 hover:underline">
-                      {p.title}
-                    </button>
-                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${p.isPublished ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
-                      {p.isPublished ? 'LIVE' : 'DRAFT'}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* ── pages modal removed: Online Store scope is Themes only (Shopify-style) ── */}
     </div>
+  );
+}
+
+// useSearchParams requires a Suspense boundary at build time (Next.js App Router).
+export default function ThemeEditor() {
+  return (
+    <Suspense
+      fallback={
+        <div className="h-full flex items-center justify-center bg-[#ececee] text-slate-400 text-[13px]">
+          Loading theme editor…
+        </div>
+      }
+    >
+      <ThemeEditorInner />
+    </Suspense>
   );
 }

@@ -10,6 +10,7 @@ import {
   Tag,
   Users,
   CreditCard,
+  Palette,
   Settings,
   Webhook,
   Store,
@@ -80,6 +81,11 @@ const NAV_GROUPS: NavGroup[] = [
     id: 'content',
     title: 'Content',
     items: [{ href: '/blog', label: 'Blog posts', icon: Newspaper }],
+  },
+  {
+    id: 'online-store',
+    title: 'Online store',
+    items: [{ href: '/themes', label: 'Themes', icon: Palette }],
   },
   {
     id: 'settings',

@@ -5,6 +5,7 @@ import {
   Get,
   Param,
   Post,
+  Put,
   UseInterceptors,
   UseGuards,
   UploadedFile,
@@ -12,7 +13,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags } from '@nestjs/swagger';
-import { IsBoolean, IsOptional, IsString, Length } from 'class-validator';
+import { IsBoolean, IsObject, IsOptional, IsString, Length } from 'class-validator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { ThemesService } from './themes.service';
@@ -49,6 +50,11 @@ class RestoreDto {
   declare publish?: boolean;
 }
 
+class UpdateThemeDto {
+  @IsObject()
+  declare config: Record<string, unknown>;
+}
+
 @ApiTags('themes')
 @Controller('themes')
 export class ThemesController {
@@ -64,6 +70,13 @@ export class ThemesController {
   @Get(':id')
   getOne(@CurrentUser() user: any, @Param('id') id: string) {
     return this.service.getOne(user.tenantId, id);
+  }
+
+  /** Save theme-editor changes into a theme (draft saves draft; live also syncs the storefront). */
+  @UseGuards(JwtAuthGuard)
+  @Put(':id')
+  save(@CurrentUser() user: any, @Param('id') id: string, @Body() dto: UpdateThemeDto) {
+    return this.service.updateConfig(user.tenantId, id, dto.config);
   }
 
   @UseGuards(JwtAuthGuard)
