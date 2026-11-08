@@ -20,7 +20,6 @@ import {
   ChevronDown,
   BarChart3,
   Megaphone,
-  Newspaper,
 } from 'lucide-react';
 import { getToken, clearToken, getCurrentUser, getApiBase } from '@/lib/api';
 
@@ -76,11 +75,6 @@ const NAV_GROUPS: NavGroup[] = [
     id: 'marketing',
     title: 'Marketing',
     items: [{ label: 'Marketing', icon: Megaphone, badge: 'Later', disabled: true }],
-  },
-  {
-    id: 'content',
-    title: 'Content',
-    items: [{ href: '/blog', label: 'Blog posts', icon: Newspaper }],
   },
   {
     id: 'online-store',
