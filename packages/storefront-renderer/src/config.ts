@@ -197,19 +197,21 @@ export function getSchemes(cfg?: StoreCustomization | null): ColorScheme[] {
   return out;
 }
 
-/** Which scheme each section type falls back to when nothing is configured. */
+/** Which scheme each section type falls back to when nothing is configured
+ *  (default arrangement: header & footer share one scheme, the announcement
+ *  bar pops on its own, and body text uses a separate base scheme). */
 export const SCHEME_FALLBACK: Record<string, string> = {
-  announcement: 'scheme-1',
+  announcement: 'scheme-4',
   header: 'scheme-2',
   hero: 'scheme-3',
   features: 'scheme-1',
-  featuredProducts: 'scheme-4',
-  productGrid: 'scheme-4',
+  featuredProducts: 'scheme-3',
+  productGrid: 'scheme-3',
   productCards: 'scheme-3',
-  richText: 'scheme-2',
-  imageWithText: 'scheme-2',
-  faq: 'scheme-2',
-  footer: 'scheme-5',
+  richText: 'scheme-1',
+  imageWithText: 'scheme-1',
+  faq: 'scheme-1',
+  footer: 'scheme-2', // same as header — one shared scheme by design
 };
 
 /**
@@ -344,14 +346,6 @@ const SPACING: Record<'compact' | 'normal' | 'roomy', string> = {
 export function themeVars(cfg?: StoreCustomization | null): React.CSSProperties {
   const design = resolveDesign(cfg);
   const schemes = getSchemes(cfg);
-  const anchor = cfg ?? DEFAULT_CUSTOMIZATION;
-  // Stores whose config predates the scheme system keep the exact colors the
-  // merchant chose for theme.primary/accent — the scheme palette only takes
-  // over once colorSchemes have actually been stored.
-  const csRaw = anchor?.colorSchemes as unknown;
-  const storedSchemes = isPlainObject(csRaw) && Array.isArray((csRaw as Record<string, unknown>).schemes);
-  const legacyPrimary = storedSchemes ? null : /^#[0-9a-fA-F]{6}$/i.test(String(anchor.theme?.primary || '')) ? anchor.theme.primary : null;
-  const legacyAccent = storedSchemes ? null : /^#[0-9a-fA-F]{6}$/i.test(String(anchor.theme?.accent || '')) ? anchor.theme.accent : null;
   return {
     ['--pk-font-heading' as string]: fontStack(design.headingFont),
     ['--pk-font-body' as string]: fontStack(design.bodyFont),
@@ -369,12 +363,11 @@ export function themeVars(cfg?: StoreCustomization | null): React.CSSProperties 
       design.cardStyle === 'shadow'
         ? '0 1px 3px rgba(15, 23, 42, 0.08), 0 8px 24px rgba(15, 23, 42, 0.06)'
         : 'none',
-    // legacy vars keep old storefront components (ProductCard, track band…)
-    // looking intentional alongside the scheme system
-    ['--pk-primary' as string]: legacyPrimary ?? schemes[0].colors.button,
-    ['--pk-accent' as string]: legacyAccent ?? schemes[1]?.colors.accent ?? schemes[0].colors.accent,
-    ['--pk-announcement' as string]: schemeFor(anchor, 'announcement').colors.background,
-    ['--pk-announcement-text' as string]: schemeFor(anchor, 'announcement').colors.text,
+    // brand shortcuts for non-home pages (cart, track, order, product detail).
+    // Derived purely from the theme's base color scheme — there is no separate
+    // legacy Primary/Accent system anymore.
+    ['--pk-primary' as string]: schemes[0].colors.button,
+    ['--pk-accent' as string]: schemes[0].colors.accent,
   } as React.CSSProperties;
 }
 
@@ -384,8 +377,9 @@ export function themeVars(cfg?: StoreCustomization | null): React.CSSProperties 
 
 export type StoreCustomization = {
   branding: { logoUrl?: string; faviconUrl?: string; tagline?: string };
-  /** LEGACY — kept so old configs never break; supersedes is `colorSchemes`. */
-  theme: { primary?: string; accent?: string };
+  /* The old `theme.primary/accent` color system has been REMOVED — all store
+     colors now come from `colorSchemes`. Stored configs containing a legacy
+     `theme` key are preserved but ignored by rendering. */
   colorSchemes?: { schemes: ColorScheme[] };
   style?: DesignStyle;
   announcement: { enabled?: boolean; text?: string; schemeId?: string };
@@ -417,7 +411,6 @@ export type StoreCustomization = {
 
 export const DEFAULT_CUSTOMIZATION: StoreCustomization = {
   branding: { logoUrl: '', faviconUrl: '', tagline: '' },
-  theme: { primary: '#059669', accent: '#0d9488' },
   colorSchemes: { schemes: DEFAULT_COLOR_SCHEMES },
   style: {
     headingFont: 'system',
@@ -435,7 +428,7 @@ export const DEFAULT_CUSTOMIZATION: StoreCustomization = {
   announcement: {
     enabled: true,
     text: 'Nationwide Delivery to 100+ Cities · Cash on Delivery Available · 7-Day Exchange',
-    schemeId: 'scheme-1',
+    schemeId: 'scheme-4',
   },
   hero: {
     enabled: true,
@@ -457,7 +450,7 @@ export const DEFAULT_CUSTOMIZATION: StoreCustomization = {
     aboutText:
       'Premium Pakistani unstitched fabrics — lawn, cotton jacquard and festive silks, delivered nationwide with COD.',
     quickLinks: [],
-    schemeId: 'scheme-5',
+    schemeId: 'scheme-2',
     social: { whatsapp: '', instagram: '', facebook: '', tiktok: '' },
     copyright: '',
   },

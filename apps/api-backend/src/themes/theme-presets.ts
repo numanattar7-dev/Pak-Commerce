@@ -25,6 +25,11 @@
 // | Sense         | Beauty & wellness — soft rose, rounded, overlay hero    |
 // | Ride          | Sports & outdoor — dark overlay hero, yellow highlight  |
 //
+// Scheme assignments per theme:
+//   announcement → scheme-4 (popping bar)
+//   header & footer → scheme-2 (shared scheme, per merchant request)
+//   hero/features/etc → vary per theme
+//
 // Presets are installed once per tenant (source = SYSTEM_LIBRARY). Themes in
 // existing stores whose stored config still matches the ORIGINAL v1 presets
 // (../theme-presets-v1) are auto-upgraded to these designs by the service.
@@ -103,7 +108,6 @@ export const THEME_LIBRARY_PRESETS: ThemePreset[] = [
     name: 'Dawn',
     description: 'Minimalist theme that lets product images take center stage.',
     config: {
-      theme: { primary: '#121212', accent: '#5c5c5c' },
       colorSchemes: colorSchemes([
         scheme('scheme-1', 'Base', '#ffffff', '#121212', '#111111', '#121212', '#121212', '#ffffff', '#ffffff', '#121212', '#e5e5e5'),
         scheme('scheme-2', 'Light gray', '#f7f7f7', '#3f3f46', '#111111', '#52525b', '#27272a', '#ffffff', '#f7f7f7', '#27272a', '#e4e4e7'),
@@ -157,11 +161,11 @@ export const THEME_LIBRARY_PRESETS: ThemePreset[] = [
           { ...STANDARD_FAQ, settings: { heading: 'Frequently asked questions', schemeId: 'scheme-1' } },
         ],
       },
-      header: { menuLinks: [], schemeId: 'scheme-1' },
+      header: { menuLinks: [], schemeId: 'scheme-2' },
       footer: {
         aboutText: 'Minimal essentials, delivered nationwide with cash on delivery.',
         quickLinks: [],
-        schemeId: 'scheme-4',
+        schemeId: 'scheme-2',
         social: { whatsapp: '', instagram: '', facebook: '', tiktok: '' },
       },
     },
@@ -172,7 +176,6 @@ export const THEME_LIBRARY_PRESETS: ThemePreset[] = [
     name: 'Refresh',
     description: 'Clean and bold — big headings and a minimal palette that draw attention to your story.',
     config: {
-      theme: { primary: '#1d4ed8', accent: '#0f172a' },
       colorSchemes: colorSchemes([
         scheme('scheme-1', 'Base', '#ffffff', '#1e293b', '#0f172a', '#1d4ed8', '#1d4ed8', '#ffffff', '#ffffff', '#1e40af', '#dbeafe'),
         scheme('scheme-2', 'Cool', '#eff6ff', '#1e3a8a', '#0f172a', '#2563eb', '#1e40af', '#ffffff', '#ffffff', '#1e40af', '#bfdbfe'),
@@ -196,7 +199,7 @@ export const THEME_LIBRARY_PRESETS: ThemePreset[] = [
       announcement: {
         enabled: true,
         text: 'New drops every week · Free returns within 7 days · COD available',
-        schemeId: 'scheme-3',
+        schemeId: 'scheme-4',
       },
       hero: {
         enabled: true,
@@ -229,11 +232,11 @@ export const THEME_LIBRARY_PRESETS: ThemePreset[] = [
           { ...STANDARD_FAQ, settings: { heading: 'Good to know', schemeId: 'scheme-5' } },
         ],
       },
-      header: { menuLinks: [], schemeId: 'scheme-1' },
+      header: { menuLinks: [], schemeId: 'scheme-2' },
       footer: {
         aboutText: 'Clean, effective products — delivered nationwide with cash on delivery.',
         quickLinks: [],
-        schemeId: 'scheme-4',
+        schemeId: 'scheme-2',
         social: { whatsapp: '', instagram: '', facebook: '', tiktok: '' },
       },
     },
@@ -244,7 +247,6 @@ export const THEME_LIBRARY_PRESETS: ThemePreset[] = [
     name: 'Craft',
     description: 'Airy, editorial layout built for handmade goods and storytelling.',
     config: {
-      theme: { primary: '#92400e', accent: '#b45309' },
       colorSchemes: colorSchemes([
         scheme('scheme-1', 'Linen', '#faf6f0', '#44403c', '#292524', '#b45309', '#92400e', '#ffffff', '#ffffff', '#92400e', '#e7ddcf'),
         scheme('scheme-2', 'Sand', '#f3ebe1', '#57534e', '#292524', '#d97706', '#92400e', '#ffffff', '#faf6f0', '#92400e', '#ddcdba'),
@@ -268,7 +270,7 @@ export const THEME_LIBRARY_PRESETS: ThemePreset[] = [
       announcement: {
         enabled: true,
         text: 'Handmade in small batches · Ships in 2–4 days · COD available',
-        schemeId: 'scheme-2',
+        schemeId: 'scheme-4',
       },
       hero: {
         enabled: true,
@@ -303,11 +305,11 @@ export const THEME_LIBRARY_PRESETS: ThemePreset[] = [
           { ...STANDARD_FAQ, settings: { heading: 'Questions about your order', schemeId: 'scheme-3' } },
         ],
       },
-      header: { menuLinks: [], schemeId: 'scheme-1' },
+      header: { menuLinks: [], schemeId: 'scheme-2' },
       footer: {
         aboutText: 'Small-batch handmade goods — crafted with care, delivered nationwide.',
         quickLinks: [],
-        schemeId: 'scheme-4',
+        schemeId: 'scheme-2',
         social: { whatsapp: '', instagram: '', facebook: '', tiktok: '' },
       },
     },
@@ -318,7 +320,6 @@ export const THEME_LIBRARY_PRESETS: ThemePreset[] = [
     name: 'Taste',
     description: 'Industrial, high-contrast look made for specialty food and drink brands.',
     config: {
-      theme: { primary: '#b91c1c', accent: '#111827' },
       colorSchemes: colorSchemes([
         scheme('scheme-1', 'Base', '#fffaf3', '#1c1917', '#111827', '#b91c1c', '#111827', '#ffffff', '#ffffff', '#111827', '#e7e5e4'),
         scheme('scheme-2', 'Paper', '#f5f5f4', '#292524', '#111827', '#b91c1c', '#1c1917', '#ffffff', '#f5f5f4', '#1c1917', '#e0dcd8'),
@@ -342,7 +343,7 @@ export const THEME_LIBRARY_PRESETS: ThemePreset[] = [
       announcement: {
         enabled: true,
         text: 'Freshly packed daily · Nationwide delivery · Cash on Delivery',
-        schemeId: 'scheme-3',
+        schemeId: 'scheme-4',
       },
       hero: {
         enabled: true,
@@ -382,11 +383,11 @@ export const THEME_LIBRARY_PRESETS: ThemePreset[] = [
           }),
         ],
       },
-      header: { menuLinks: [], schemeId: 'scheme-1' },
+      header: { menuLinks: [], schemeId: 'scheme-2' },
       footer: {
         aboutText: 'Specialty food and pantry goods — packed fresh, delivered nationwide.',
         quickLinks: [],
-        schemeId: 'scheme-4',
+        schemeId: 'scheme-2',
         social: { whatsapp: '', instagram: '', facebook: '', tiktok: '' },
       },
     },
@@ -397,7 +398,6 @@ export const THEME_LIBRARY_PRESETS: ThemePreset[] = [
     name: 'Sense',
     description: 'Soft colors and rounded, warm styling for beauty and wellness brands.',
     config: {
-      theme: { primary: '#be185d', accent: '#9333ea' },
       colorSchemes: colorSchemes([
         scheme('scheme-1', 'Base', '#fffafb', '#3f3f46', '#831843', '#be185d', '#be185d', '#ffffff', '#ffffff', '#831843', '#f3d7e3'),
         scheme('scheme-2', 'Blush', '#fdf2f7', '#6b4553', '#500724', '#ec4899', '#be185d', '#ffffff', '#fffafb', '#be185d', '#f0d3e0'),
@@ -421,7 +421,7 @@ export const THEME_LIBRARY_PRESETS: ThemePreset[] = [
       announcement: {
         enabled: true,
         text: 'Gentle on skin · Dermatologist tested · Free delivery over Rs. 3,000',
-        schemeId: 'scheme-2',
+        schemeId: 'scheme-4',
       },
       hero: {
         enabled: true,
@@ -454,11 +454,11 @@ export const THEME_LIBRARY_PRESETS: ThemePreset[] = [
           { ...STANDARD_FAQ, settings: { heading: 'Care questions', schemeId: 'scheme-1' } },
         ],
       },
-      header: { menuLinks: [], schemeId: 'scheme-1' },
+      header: { menuLinks: [], schemeId: 'scheme-2' },
       footer: {
         aboutText: 'Beauty and wellness essentials — gentle care, delivered nationwide.',
         quickLinks: [],
-        schemeId: 'scheme-4',
+        schemeId: 'scheme-2',
         social: { whatsapp: '', instagram: '', facebook: '', tiktok: '' },
       },
     },
@@ -469,7 +469,6 @@ export const THEME_LIBRARY_PRESETS: ThemePreset[] = [
     name: 'Ride',
     description: 'Sporty, high-contrast theme for active, outdoor and fitness brands.',
     config: {
-      theme: { primary: '#111827', accent: '#facc15' },
       colorSchemes: colorSchemes([
         scheme('scheme-1', 'Base', '#ffffff', '#1f2937', '#111827', '#eab308', '#111827', '#ffffff', '#ffffff', '#111827', '#e5e7eb'),
         scheme('scheme-2', 'Steel', '#f1f5f9', '#334155', '#0b1220', '#eab308', '#1f2937', '#ffffff', '#f1f5f9', '#1f2937', '#d8dee7'),
@@ -528,11 +527,11 @@ export const THEME_LIBRARY_PRESETS: ThemePreset[] = [
           { ...STANDARD_FAQ, settings: { heading: 'Frequently asked questions', schemeId: 'scheme-2' } },
         ],
       },
-      header: { menuLinks: [], schemeId: 'scheme-1' },
+      header: { menuLinks: [], schemeId: 'scheme-2' },
       footer: {
         aboutText: 'Sport and outdoor gear — built for movement, delivered nationwide.',
         quickLinks: [],
-        schemeId: 'scheme-5',
+        schemeId: 'scheme-2',
         social: { whatsapp: '', instagram: '', facebook: '', tiktok: '' },
       },
     },

@@ -5,7 +5,7 @@
 // Talks to the api-backend (NestJS). JWT token lives in localStorage.
 // ---------------------------------------------------------------------------
 
-let API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://127.0.0.1:4000'; // try IPv4 loopback first (Node/IPv6-safe)
+let API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'https://pak-commerce-api.onrender.com';
 
 export const TOKEN_KEY = 'pkc_admin_token';
 
@@ -38,7 +38,7 @@ export class ApiError extends Error {
   }
 }
 
-/** Authenticated request. Falls back to localhost:4000 if 127.0.0.1 is unreachable. */
+/** Authenticated request against the configured API base. */
 export async function api<T = any>(
   path: string,
   options: { method?: string; body?: unknown; skipFallback?: boolean } = {},
@@ -81,33 +81,22 @@ export async function api<T = any>(
     return (await attempt(API_BASE).then((r) => r.json())) as T;
   } catch (err) {
     if (err instanceof ApiError || options.skipFallback) throw err;
-    // Network failure → try localhost hostname (dev only; custom API base = no fallback)
-    if (process.env.NEXT_PUBLIC_API_BASE) throw err;
-    const second = 'http://localhost:4000';
-    if (API_BASE === second) throw err;
-    try {
-      const res = await attempt(second);
-      API_BASE = second;
-      return (await res.json()) as T;
-    } catch (e2) {
-      throw e2 instanceof ApiError ? e2 : err;
-    }
+    // Network failure — report it honestly; never retry against localhost.
+    throw new ApiError(0, 'API unreachable — the server is starting up or temporarily down. Please try again shortly.', '');
   }
 }
 
 export async function login(email: string, password: string) {
-  const res = await fetch(`${API_BASE}/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password }),
-  }).catch(async () => {
-    API_BASE = 'http://localhost:4000';
-    return fetch(`${API_BASE}/auth/login`, {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
     });
-  });
+  } catch {
+    throw new ApiError(0, 'Login server unreachable — the API is starting up or temporarily down. Please try again in a moment.', '');
+  }
   if (!res.ok) {
     let msg = res.statusText;
     try {

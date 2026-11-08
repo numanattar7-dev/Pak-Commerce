@@ -5,15 +5,15 @@
 :root {
   /* Store customization theme — overridden at runtime from Store Settings */
 
-  /* legacy brand vars (older storefront components) — kept working */
-  --pk-primary: #059669;
-  --pk-accent: #0d9488;
+  /* Base scheme colors (scheme 1) set at runtime by lib/store.tsx.
+     The old separate theme.primary/accent color system has been removed —
+     these shortcuts are derived from the theme's base color scheme. */
+  --pk-primary: #111111;        /* solid button / action color */
+  --pk-accent: #059669;         /* highlights, icons, links accent */
   --pk-primary-dark: color-mix(in srgb, var(--pk-primary) 78%, black);
   --pk-primary-soft: color-mix(in srgb, var(--pk-primary) 8%, white);
   --pk-primary-softer: color-mix(in srgb, var(--pk-primary) 14%, white);
   --pk-primary-text: color-mix(in srgb, var(--pk-primary) 82%, black);
-  --pk-announcement: color-mix(in srgb, var(--pk-primary) 24%, #0f172a);
-  --pk-announcement-text: #ffffff;
 
   /* theme design tokens (set at runtime by lib/store.tsx; fallbacks here) */
   --pk-font-heading: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;

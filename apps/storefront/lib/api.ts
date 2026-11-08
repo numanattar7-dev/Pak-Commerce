@@ -8,8 +8,7 @@ import { FALLBACK_IMAGE, imageUrl } from './media';
 // only sends item references and displays what the server returns.
 // ---------------------------------------------------------------------------
 
-let API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://127.0.0.1:4000'; // IPv4-first (Node/IPv6-safe, same as admin)
-const FALLBACK_BASE = 'http://localhost:4000';
+let API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'https://pak-commerce-api.onrender.com';
 
 export const SUBDOMAIN = 'khaadi';
 
@@ -28,21 +27,18 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const send = (base: string) =>
-    fetch(`${base}${path}`, {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
       ...init,
       headers: { 'Content-Type': 'application/json', ...(init.headers || {}) },
     });
-
-  let res: Response;
-  try {
-    res = await send(API_BASE);
   } catch (e) {
-    // network-level failure (IPv6 ::1 miss) → retry once via localhost (dev only;
-    // skip the fallback when a custom API base is configured, e.g. staging/prod)
-    if (process.env.NEXT_PUBLIC_API_BASE) throw e;
-    res = await send(FALLBACK_BASE);
-    API_BASE = FALLBACK_BASE;
+    // Honest failure — never retry against localhost in production.
+    if (e instanceof TypeError) {
+      throw new ApiError(0, 'Store API unreachable — the API is starting up or temporarily down. Please refresh in a moment.', '');
+    }
+    throw e;
   }
 
   if (!res.ok) {
