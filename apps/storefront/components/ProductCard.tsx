@@ -42,7 +42,7 @@ export default function ProductCard({ product }: { product: StoreProduct }) {
 
   return (
     <div
-      className="overflow-hidden group flex flex-col justify-between transition-all bg-[var(--pk-page-bg,#fff)]"
+      className="overflow-hidden group group-hover:-translate-y-1 flex flex-col justify-between transition-all duration-200 hover:shadow-xl bg-[var(--pk-page-bg,#fff)]"
       style={{
         borderRadius: 'var(--pk-radius, 16px)',
         border: '1px solid var(--pk-card-border, #e5e7eb)',
@@ -116,7 +116,7 @@ export default function ProductCard({ product }: { product: StoreProduct }) {
         ) : singleVariant ? (
           <button
             onClick={handleAdd}
-            className="hover:bg-[var(--pk-primary-dark)] text-white text-xs font-bold px-4 py-2.5 shadow-sm transition flex items-center gap-1.5"
+            className="hover:bg-[var(--pk-primary-dark)] hover:scale-105 text-white text-xs font-bold px-4 py-2.5 shadow-sm transition-all duration-200 active:scale-95 flex items-center gap-1.5"
             style={{ borderRadius: 'var(--pk-button-radius, 12px)' }}
           >
             <ShoppingBag className="w-3.5 h-3.5" />
