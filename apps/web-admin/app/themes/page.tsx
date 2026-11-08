@@ -25,12 +25,13 @@ import {
   History,
   X,
   Palette,
-  ExternalLink,
   PackageCheck,
   AlertCircle,
   MoreVertical,
   ChevronDown,
   Paintbrush,
+  ExternalLink,
+  ArrowLeft,
 } from 'lucide-react';
 import { api, apiUpload, getApiBase } from '@/lib/api';
 import { PREVIEW_MESSAGE_TYPE, mergeStoreConfig, DEFAULT_CUSTOMIZATION } from '@pak-commerce/storefront-renderer';
@@ -70,14 +71,14 @@ type ThemeRow = {
 
 type VersionRow = { versionNumber: number; label: string | null; createdAt: string };
 
-const chipLive = 'inline-flex items-center gap-1 bg-[#95bf47] text-[#1a1a1a] text-[10px] font-black px-1.5 py-0.5 rounded';
-const chipDraft = 'inline-flex items-center gap-1 bg-slate-100 text-slate-500 text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded';
+const chipLive = 'inline-flex items-center gap-1 bg-[#95bf47] text-[#1a1a1a] text-[10px] font-black px-1.5 py-0.5 rounded shadow-sm';
+const chipDraft = 'inline-flex items-center gap-1 bg-slate-100 text-slate-500 text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded shadow-sm';
 const btnPrimary =
-  'inline-flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 text-white text-[12px] font-semibold px-3.5 py-2 rounded-lg transition disabled:opacity-50';
+  'inline-flex items-center gap-1.5 bg-slate-900 hover:bg-slate-700 text-white text-[12px] font-semibold px-3.5 py-2 rounded-lg transition-all duration-200 hover:scale-105 disabled:opacity-50 disabled:hover:scale-100 active:scale-95';
 const btnSecondary =
-  'inline-flex items-center gap-1.5 border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 text-[12px] font-semibold px-3 py-2 rounded-lg transition';
+  'inline-flex items-center gap-1.5 border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 hover:border-slate-400 text-[12px] font-semibold px-3 py-2 rounded-lg transition-all duration-200 hover:scale-105 active:scale-95';
 const menuItem =
-  'w-full flex items-center gap-2 px-2.5 py-2 text-[12px] text-slate-700 hover:bg-slate-50 rounded-lg text-left transition';
+  'w-full flex items-center gap-2 px-3 py-2.5 text-[12px] text-slate-700 hover:bg-slate-100 rounded-lg text-left transition-all duration-150 hover:scale-[1.02] active:scale-95';
 
 /** Mini store preview built from the theme's real color schemes / hero copy. */
 function ThemeThumbnail({ t, large }: { t: ThemeRow; large?: boolean }) {
@@ -95,7 +96,7 @@ function ThemeThumbnail({ t, large }: { t: ThemeRow; large?: boolean }) {
   const footerBg = schemes[4]?.bg ?? '#111827';
   const footerText = schemes[4]?.text ?? '#f1f5f9';
   return (
-    <div className="rounded-lg overflow-hidden border border-slate-200 bg-white select-none" aria-hidden>
+    <div className="rounded-lg overflow-hidden border border-slate-200 bg-white select-none group relative transition-all duration-300 hover:scale-105" aria-hidden>
       {/* browser chrome */}
       <div className="flex items-center gap-1 px-2 py-1.5 bg-slate-100 border-b border-slate-200">
         <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />
@@ -490,6 +491,27 @@ export default function ThemesPage() {
           </button>
         </div>
       )}
+      {/* ── page header with back to dashboard ── */}
+      <div className="flex items-center justify-between px-4 py-2 bg-white border-b border-slate-200 sticky top-0 z-10">
+        <Link
+          href="/"
+          className="flex items-center gap-2 text-slate-600 hover:text-slate-900 hover:bg-slate-50 px-3 py-1.5 rounded-lg transition-all duration-200 hover:scale-[1.02] active:scale-95"
+          title="Back to dashboard"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          <span className="font-semibold">Dashboard</span>
+        </Link>
+        <div className="flex items-center gap-2">
+          <a
+            href={STOREFRONT_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center gap-2 bg-slate-900 hover:bg-slate-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-all duration-200 hover:scale-105 active:scale-95"
+          >
+            <ExternalLink className="w-3 h-3" /> Open storefront
+          </a>
+        </div>
+      </div>
       {importErrors.length > 0 && (
         <div className="rounded-lg border border-red-200 bg-red-50 text-red-800 text-[12px] px-4 py-2.5">
           <p className="font-bold mb-1">Theme validation failed — nothing was installed:</p>
@@ -627,7 +649,7 @@ export default function ThemesPage() {
                 {drafts.map((t) => (
                   <div
                     key={t.id}
-                    className="bg-white rounded-xl border border-slate-200 overflow-hidden flex flex-col"
+                    className="group relative bg-white rounded-xl border border-slate-200 overflow-hidden flex flex-col transition-all duration-300 hover:shadow-xl hover:border-slate-300 hover:-translate-y-1"
                   >
                     <div className="p-3 bg-slate-50 border-b border-slate-100">
                       <ThemeThumbnail t={t} />

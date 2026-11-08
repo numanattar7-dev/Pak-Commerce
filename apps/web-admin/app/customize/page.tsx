@@ -926,8 +926,8 @@ function ThemeEditorInner() {
                       <button
                         onClick={() => setActiveSection(open ? '' : key)}
                         aria-expanded={open}
-                        className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-left transition ${
-                          open ? 'bg-slate-100' : 'hover:bg-slate-50'
+                        className={`group w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-left transition-all duration-200 hover:-translate-x-0.5 ${
+                          open ? 'bg-slate-100 shadow-sm' : 'hover:bg-slate-50'
                         }`}
                       >
                         <Icon className="w-4 h-4 text-slate-500 shrink-0" />
@@ -1221,7 +1221,7 @@ function ThemeEditorInner() {
                                       setDragHomeIndex(null);
                                       setDropHomeIndex(null);
                                     }}
-                                    className={`rounded-xl border bg-white overflow-hidden transition ${
+                                    className={`group rounded-xl border bg-white overflow-hidden transition-all duration-200 hover:shadow-lg hover:border-slate-300 hover:-translate-y-0.5 ${
                                       open ? 'border-slate-900 ring-1 ring-slate-900/10' : 'border-slate-200'
                                     } ${dropHomeIndex === i && dragHomeIndex !== i ? 'border-t-2 border-t-slate-900' : ''}`}
                                   >
